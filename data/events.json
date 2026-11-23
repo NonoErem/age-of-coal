@@ -1,0 +1,29 @@
+{
+  "max_concurrent": 3,
+  "chance_per_day": 0.08,
+  "announce_days": [3, 8],
+  "anticipation": 0.5,
+  "exposure_boost": 3.0,
+  "events": [
+    {"id": "miners_strike", "name": "Miners' strike", "text": "The miners' union has called a strike across the coalfields. Coal will be scarce.",
+     "effects": {"coal": 1.40}, "duration": [15, 25], "weight": 3, "min_day": 1, "cooldown": 40},
+    {"id": "coal_glut", "name": "Coal glut", "text": "New seams and cheap imports are flooding the coal market.",
+     "effects": {"coal": 0.70}, "duration": [20, 30], "weight": 2, "min_day": 1, "cooldown": 50, "targets_exposed": true},
+    {"id": "ore_disruption", "name": "Ore shipping disrupted", "text": "Storms and a dockers' dispute are holding up iron ore cargoes.",
+     "effects": {"iron_ore": 1.30}, "duration": [12, 20], "weight": 2, "min_day": 1, "cooldown": 40},
+    {"id": "building_boom", "name": "Building boom", "text": "Towns are growing fast and builders cannot get enough stone, steel or tools.",
+     "effects": {"limestone": 1.30, "steel": 1.10, "tools": 1.10}, "duration": [25, 35], "weight": 2, "min_day": 10, "cooldown": 50},
+    {"id": "railway_boom", "name": "Railway boom", "text": "Companies are racing to lay new lines. Rails and steel are in demand.",
+     "effects": {"rails": 1.30, "steel": 1.10}, "duration": [25, 35], "weight": 2, "min_day": 10, "cooldown": 50},
+    {"id": "electrification", "name": "Electrification", "text": "Cities are wiring up. Copper is wanted everywhere.",
+     "effects": {"copper_ore": 1.35, "copper_ingot": 1.30}, "duration": [30, 40], "weight": 2, "min_day": 15, "cooldown": 50},
+    {"id": "shipbuilding", "name": "Shipbuilding programme", "text": "The navy and the shipping lines have placed large orders.",
+     "effects": {"steel": 1.25, "pig_iron": 1.10, "machinery": 1.15}, "duration": [25, 35], "weight": 2, "min_day": 20, "cooldown": 60},
+    {"id": "steel_dumping", "name": "Steel dumping", "text": "Foreign mills are selling steel below cost to win customers.",
+     "effects": {"steel": 0.75}, "duration": [20, 30], "weight": 2, "min_day": 25, "cooldown": 60, "targets_exposed": true},
+    {"id": "recession", "name": "Recession", "text": "Trade has slumped and customers are cancelling orders for finished goods.",
+     "effects": {"steel": 0.85, "tools": 0.80, "rails": 0.80, "machinery": 0.80}, "duration": [35, 50], "weight": 1, "min_day": 40, "cooldown": 90, "targets_exposed": true},
+    {"id": "rearmament", "name": "Rearmament", "text": "The army depots are stocking up on steel, tools and coal.",
+     "effects": {"steel": 1.35, "tools": 1.30, "coal": 1.15, "iron_ore": 1.10}, "duration": [40, 55], "weight": 1, "min_day": 80, "cooldown": 120}
+  ]
+}

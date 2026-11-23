@@ -6,7 +6,8 @@ extends RefCounted
 const Market = preload("res://sim/market.gd")
 const Production = preload("res://sim/production.gd")
 const Contracts = preload("res://sim/contracts.gd")
-const SAVE_VERSION := 4
+const MarketEvents = preload("res://sim/market_events.gd")
+const SAVE_VERSION := 5
 const HISTORY_DAYS := 120
 
 signal day_advanced(day: int)
@@ -29,6 +30,9 @@ var active_contracts: Array = []
 var contract_next_id: int = 1
 var contract_stats: Dictionary = {"completed": 0, "failed": 0, "earned_cents": 0, "penalties_cents": 0}
 var news: Array = []               # what happened to contracts today (not saved)
+var event_rng := RandomNumberGenerator.new()  # separate stream for market events
+var market_events: Dictionary = {"upcoming": [], "active": [], "past": [], "last_end": {}, "next_uid": 1}
+var event_news: Array = []         # market events announced, started, ended today (not saved)
 var events: Array = []             # factories paused/resumed, mines depleted today (not saved)
 var history: Dictionary = {}       # resource id -> end-of-day spot prices in cents, newest last
 var _deposit_tiles: Dictionary = {}  # "x,y" -> deposit id
@@ -39,6 +43,7 @@ func _init(game_data: Dictionary, p_seed: int = 12345) -> void:
     seed_value = p_seed
     rng.seed = p_seed
     contract_rng.seed = p_seed + 7919
+    event_rng.seed = p_seed + 104729
     var balance: Dictionary = data["balance"]
     money_cents = int(balance["start_money_cents"])
     var start: Dictionary = balance.get("start_inventory", {})
@@ -193,13 +198,14 @@ func deliver_contract(contract_id: int, qty: int) -> Dictionary:
 # ---------- clock ----------
 
 func advance_day() -> void:
-    # Order of a day: production -> upkeep -> market (prices recover, presence updates) -> new day -> contracts.
+    # Order of a day: production -> upkeep -> market (prices recover, presence updates) -> new day -> market events -> price history -> contracts.
     # Still to come: events before the market; transport and a bankruptcy check.
     events = []
     last_report = Production.run_day(self)
     money_cents -= int(last_report["upkeep_cents"])
     market.advance_day(rng, _net_surplus(last_report))
     day += 1
+    MarketEvents.daily_update(self)
     _record_history()
     Contracts.daily_update(self)
     day_advanced.emit(day)
@@ -232,6 +238,8 @@ func to_dict() -> Dictionary:
         "deposits": deposits.duplicate(true),
         "next_uid": next_uid,
         "history": history.duplicate(true),
+        "market_events": market_events.duplicate(true),
+        "event_rng_state": str(event_rng.state),
         "contracts": {
             "board": board.duplicate(true), "active": active_contracts.duplicate(true),
             "stats": contract_stats.duplicate(), "next_id": contract_next_id,
@@ -243,7 +251,7 @@ func to_dict() -> Dictionary:
 func load_dict(d: Dictionary) -> bool:
     if int(d.get("version", 0)) != SAVE_VERSION:
         return false
-    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts"]:
+    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts", "market_events", "event_rng_state"]:
         if not d.has(key):
             return false
     seed_value = int(d["seed"])
@@ -290,6 +298,23 @@ func load_dict(d: Dictionary) -> bool:
         for v in d["history"][id]:
             arr.append(float(v))
         history[id] = arr
+    event_rng.seed = seed_value + 104729
+    event_rng.state = String(d["event_rng_state"]).to_int()
+    event_news = []
+    market_events = {"upcoming": [], "active": [], "past": [], "last_end": {}, "next_uid": int(d["market_events"]["next_uid"])}
+    for key in ["upcoming", "active", "past"]:
+        for src in d["market_events"][key]:
+            var e: Dictionary = {
+                "uid": int(src["uid"]), "type": str(src["type"]), "announced_day": int(src["announced_day"]),
+                "start_day": int(src["start_day"]), "end_day": int(src["end_day"]), "effects": {},
+            }
+            for res in src["effects"]:
+                e["effects"][res] = float(src["effects"][res])
+            if not data["events"]["events"].has(e["type"]):
+                return false
+            market_events[key].append(e)
+    for t in d["market_events"]["last_end"]:
+        market_events["last_end"][t] = int(d["market_events"]["last_end"][t])
     var c: Dictionary = d["contracts"]
     contract_rng.seed = seed_value + 7919
     contract_rng.state = String(c["rng_state"]).to_int()

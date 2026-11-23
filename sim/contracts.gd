@@ -2,12 +2,15 @@ extends RefCounted
 ## Contract board, delivery and failure. No reputation yet.
 ##
 ## Rules:
+## - No offers for goods a market event is distorting (see market_events.gd).
 ## - Offers pay 115-140% of the market reference price (tighter deadline and bigger quantity pay more).
 ## - The reference price ignores the player's own trading pressure, so it cannot be pumped.
 ## - Offers are only made for things the player could plausibly deliver (stock + production + buying).
 ## - Each delivery is paid straight away, per unit, at the contract price.
 ## - If the deadline passes, the undelivered part costs a penalty (40% of its value).
 ## - Contracts use their own random stream, so they never disturb market prices.
+
+const MarketEvents = preload("res://sim/market_events.gd")
 
 
 static func setup(state) -> void:
@@ -70,9 +73,12 @@ static func generate_offer(state) -> Dictionary:
         client_weights[id] = 1.0
     var d_range: Array = cfg["deadline_days"]
     var p_range: Array = cfg["premium"]
+    var distorted: Dictionary = MarketEvents.affected_resources(state)
     for _attempt in 6:
         var client: String = _pick_weighted(rng, client_weights)
         var res: String = _pick_weighted(rng, clients[client]["wants"])
+        if distorted.has(res):
+            continue
         var q_range: Array = cfg["quantities"][res]
         var qmin: int = int(q_range[0])
         var qmax: int = int(q_range[1])

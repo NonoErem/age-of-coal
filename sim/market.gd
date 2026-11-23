@@ -15,8 +15,7 @@ var _resources: Dictionary
 var _balance: Dictionary
 var trend: Dictionary = {}
 var pressure: Dictionary = {}
-var shock_mult: Dictionary = {}
-var shock_days: Dictionary = {}
+var shock_mult: Dictionary = {}    # product of all running market events, set by MarketEvents
 var presence: Dictionary = {}      # smoothed units per day the company puts into this market
 var volume_today: Dictionary = {}  # units bought or sold on the market since the last day change
 
@@ -28,7 +27,6 @@ func _init(resources: Dictionary, balance: Dictionary) -> void:
         trend[id] = 1.0
         pressure[id] = 1.0
         shock_mult[id] = 1.0
-        shock_days[id] = 0
         presence[id] = 0.0
         volume_today[id] = 0.0
 
@@ -134,13 +132,12 @@ func _simulate(id: String, qty: int, is_buy: bool) -> Dictionary:
     return {"total": total, "pressure": p}
 
 
-## Announce-and-apply shock, for the future event system.
-func apply_shock(id: String, mult: float, days: int) -> void:
+## Price multiplier from market events (strikes, booms, gluts). Set every day by MarketEvents.
+func set_shock(id: String, mult: float) -> void:
     shock_mult[id] = mult
-    shock_days[id] = days
 
 
-## One daily step: pressure recovers, trend wanders, shocks tick down, presence updates.
+## One daily step: pressure recovers, trend wanders, presence updates.
 ## net_produced is what the company made beyond its own factories' needs, per resource.
 ## Resources are visited in file order so the same seed always gives the same result.
 func advance_day(rng: RandomNumberGenerator, net_produced: Dictionary = {}) -> void:
@@ -155,10 +152,6 @@ func advance_day(rng: RandomNumberGenerator, net_produced: Dictionary = {}) -> v
         var t: float = float(trend[id])
         t += rng.randfn(0.0, vol) + reversion * (1.0 - t)
         trend[id] = clampf(t, t_min, t_max)
-        if int(shock_days[id]) > 0:
-            shock_days[id] = int(shock_days[id]) - 1
-            if int(shock_days[id]) == 0:
-                shock_mult[id] = 1.0
         var today: float = float(volume_today[id]) + float(net_produced.get(id, 0))
         presence[id] = float(presence[id]) * (1.0 - smoothing) + smoothing * today
         volume_today[id] = 0.0
@@ -169,7 +162,6 @@ func to_dict() -> Dictionary:
         "trend": trend.duplicate(),
         "pressure": pressure.duplicate(),
         "shock_mult": shock_mult.duplicate(),
-        "shock_days": shock_days.duplicate(),
         "presence": presence.duplicate(),
         "volume_today": volume_today.duplicate(),
     }
@@ -180,6 +172,5 @@ func load_dict(d: Dictionary) -> void:
         trend[id] = float(d["trend"].get(id, 1.0))
         pressure[id] = float(d["pressure"].get(id, 1.0))
         shock_mult[id] = float(d["shock_mult"].get(id, 1.0))
-        shock_days[id] = int(d["shock_days"].get(id, 0))
         presence[id] = float(d.get("presence", {}).get(id, 0.0))
         volume_today[id] = float(d.get("volume_today", {}).get(id, 0.0))

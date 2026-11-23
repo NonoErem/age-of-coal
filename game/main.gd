@@ -12,7 +12,9 @@ const TopBar = preload("res://ui/top_bar.gd")
 const BuildBar = preload("res://ui/build_bar.gd")
 const EventLog = preload("res://ui/event_log.gd")
 const GameMenu = preload("res://ui/game_menu.gd")
+const NewsPanel = preload("res://ui/news_panel.gd")
 const SaveManager = preload("res://game/save_manager.gd")
+const MarketEvents = preload("res://sim/market_events.gd")
 const MarketPanel = preload("res://ui/market_panel.gd")
 const ProductionPanel = preload("res://ui/production_panel.gd")
 const ContractsPanel = preload("res://ui/contracts_panel.gd")
@@ -37,6 +39,7 @@ var tabs: TabContainer
 var market_panel
 var production_panel
 var contracts_panel
+var news_panel
 
 
 func _ready() -> void:
@@ -129,6 +132,10 @@ func _build_ui() -> void:
     contracts_panel.changed.connect(refresh_all)
     contracts_panel.message.connect(log_message)
     tabs.add_child(contracts_panel)
+    news_panel = NewsPanel.new()
+    news_panel.name = "News"
+    news_panel.setup(state)
+    tabs.add_child(news_panel)
 
     event_log = EventLog.new()
     event_log.setup()
@@ -319,6 +326,7 @@ func _log_day() -> void:
     var res: Dictionary = state.data["resources"]
     var defs: Dictionary = state.data["buildings"]
     var clients: Dictionary = state.data["contracts"]["clients"]
+    _log_market_events()
     for e in state.events:
         var name_text: String = str(defs[e["type"]]["name"])
         match str(e["kind"]):
@@ -347,6 +355,27 @@ func _log_day() -> void:
     was_negative = state.money_cents < 0
 
 
+func _log_market_events() -> void:
+    var res: Dictionary = state.data["resources"]
+    var defs: Dictionary = state.data["events"]["events"]
+    var me: Dictionary = state.market_events
+    for n in state.event_news:
+        var def: Dictionary = defs[n["type"]]
+        match str(n["kind"]):
+            "announced":
+                for e in me["upcoming"]:
+                    if int(e["uid"]) == int(n["uid"]):
+                        log_message("%s announced. %s Prices: %s from day %d, for about %d days." % [
+                            str(def["name"]), str(def["text"]), MarketEvents.effects_text(e["effects"], res),
+                            int(e["start_day"]), int(e["end_day"]) - int(e["start_day"]) + 1], "warn")
+            "started":
+                log_message("%s has begun." % str(def["name"]), "warn")
+            "ended":
+                log_message("%s is over. Prices are settling back." % str(def["name"]), "info")
+            "withdrawn":
+                log_message("%s withdrew its offer for %s until prices settle." % [str(state.data["contracts"]["clients"][n["client"]]["name"]), str(res[n["resource"]]["name"]).to_lower()], "info")
+
+
 # ---------- refreshing ----------
 
 func refresh_all() -> void:
@@ -354,8 +383,10 @@ func refresh_all() -> void:
     market_panel.refresh()
     production_panel.refresh()
     contracts_panel.refresh()
+    news_panel.refresh()
     inspector.refresh()
     build_bar.refresh()
     map_view.queue_redraw()
     tabs.set_tab_title(1, "Production (%d!)" % production_panel.attention_count if production_panel.attention_count > 0 else "Production")
     tabs.set_tab_title(2, "Contracts (%d)" % state.board.size() if not state.board.is_empty() else "Contracts")
+    tabs.set_tab_title(3, "News (%d)" % news_panel.count if news_panel.count > 0 else "News")

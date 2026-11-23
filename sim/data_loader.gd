@@ -23,7 +23,13 @@ static func load_game_data(dir: String = "res://data") -> Dictionary:
     if typeof(contracts) == TYPE_DICTIONARY:
         contracts_out = contracts
         contracts_out["clients"] = _index_by_id(contracts.get("clients", []))
+    var events: Variant = load_json(dir + "/events.json")
+    var events_out: Dictionary = {}
+    if typeof(events) == TYPE_DICTIONARY:
+        events_out = events
+        events_out["events"] = _index_by_id(events.get("events", []))
     return {
+        "events": events_out,
         "balance": load_json(dir + "/balance.json"),
         "resources": _index_by_id(load_json(dir + "/resources.json")),
         "buildings": _index_by_id(load_json(dir + "/buildings.json")),
@@ -121,6 +127,32 @@ static func validate(data: Dictionary) -> Array:
         if not tut.is_empty():
             if not cfg["clients"].has(tut.get("client", "")) or not cfg["quantities"].has(tut.get("resource", "")):
                 errors.append("tutorial contract refers to an unknown client or resource")
+
+    var ev: Dictionary = data["events"]
+    if ev.is_empty():
+        errors.append("events.json failed to load")
+    else:
+        var lead: Array = ev["announce_days"]
+        if int(ev["max_concurrent"]) < 1 or float(ev["chance_per_day"]) < 0.0 or float(ev["chance_per_day"]) > 1.0:
+            errors.append("events: max_concurrent must be >= 1 and chance_per_day between 0 and 1")
+        if lead.size() != 2 or int(lead[0]) < 1 or int(lead[1]) < int(lead[0]):
+            errors.append("events: announce_days must be [min, max] with min >= 1")
+        if float(ev["anticipation"]) < 0.0 or float(ev["anticipation"]) > 1.0:
+            errors.append("events: anticipation must be between 0 and 1")
+        for eid in ev["events"]:
+            var e: Dictionary = ev["events"][eid]
+            if e.get("effects", {}).is_empty():
+                errors.append("event %s has no effects" % eid)
+            for res_id in e.get("effects", {}):
+                if not resources.has(res_id):
+                    errors.append("event %s: unknown resource '%s'" % [eid, res_id])
+                elif float(e["effects"][res_id]) <= 0.0 or is_equal_approx(float(e["effects"][res_id]), 1.0):
+                    errors.append("event %s: the effect on %s must be above 0 and not 1" % [eid, res_id])
+            var dur: Array = e.get("duration", [])
+            if dur.size() != 2 or int(dur[0]) < 1 or int(dur[1]) < int(dur[0]):
+                errors.append("event %s: duration must be [min, max] with min >= 1" % eid)
+            if float(e.get("weight", 0.0)) <= 0.0:
+                errors.append("event %s: weight must be > 0" % eid)
 
     var start: Dictionary = data["balance"].get("start_inventory", {})
     for res_id in start:
