@@ -24,6 +24,8 @@ func fresh_data(neutral_trend: bool = true) -> Dictionary:
     var out: Dictionary = gd.duplicate()
     out["balance"] = gd["balance"].duplicate(true)
     out["contracts"] = gd["contracts"].duplicate(true)
+    out["events"] = gd["events"].duplicate(true)
+    out["events"]["chance_per_day"] = 0.0
     if neutral_trend:
         out["balance"]["trend_volatility"] = 0.0
         out["balance"]["trend_reversion"] = 0.0

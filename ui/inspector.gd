@@ -2,10 +2,13 @@ extends PanelContainer
 ## Shows what is on the selected tile, or whether the chosen building fits there.
 
 const Style = preload("res://ui/style.gd")
+const ArtLibrary = preload("res://game/art_library.gd")
 
 var state
 var tool_id: String = ""
 var selected: Vector2i = Vector2i(-1, -1)
+var icon_holder: HBoxContainer
+var icon: TextureRect
 var title_label: Label
 var detail_label: Label
 var bar: ProgressBar
@@ -14,9 +17,20 @@ var bar: ProgressBar
 func setup(p_state) -> void:
     state = p_state
     custom_minimum_size = Vector2(0, 76)
+    icon_holder = HBoxContainer.new()
+    icon_holder.add_theme_constant_override("separation", 10)
+    add_child(icon_holder)
+    icon = TextureRect.new()
+    icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    icon.custom_minimum_size = Vector2(52, 52)
+    icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+    icon_holder.add_child(icon)
     var box := VBoxContainer.new()
+    box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     box.add_theme_constant_override("separation", 2)
-    add_child(box)
+    icon_holder.add_child(box)
     title_label = Label.new()
     title_label.add_theme_font_size_override("font_size", 15)
     box.add_child(title_label)
@@ -35,6 +49,8 @@ func setup(p_state) -> void:
 
 func refresh() -> void:
     bar.visible = false
+    icon.texture = null
+    icon.visible = false
     detail_label.add_theme_color_override("font_color", Style.INK_SOFT)
     if selected.x < 0:
         title_label.text = "Nothing selected"
@@ -49,6 +65,7 @@ func refresh() -> void:
 
     if not b.is_empty():
         var def: Dictionary = state.data["buildings"][b["type"]]
+        icon.texture = ArtLibrary.building(str(b["type"]))
         title_label.text = "%s at (%d, %d)" % [str(def["name"]), x, y]
         var status: String = str(b["status"])
         if def["kind"] == "factory":
@@ -69,6 +86,7 @@ func refresh() -> void:
         lines.append("Upkeep %s/day" % Style.money(int(def["upkeep_per_day"])))
     elif dep_id != "":
         var info: Dictionary = state.data["map"]["deposits"][dep_id]
+        icon.texture = ArtLibrary.deposit(str(info["resource"]))
         title_label.text = "%s deposit at (%d, %d)" % [str(res[info["resource"]]["name"]), x, y]
         var remaining: int = int(state.deposits[dep_id]["remaining"])
         lines.append("Richness x%.1f. %s of %s left. Land %s" % [float(info["richness"]), Style.num(remaining), Style.num(int(info["amount"])), Style.money0(int(info["land_cost"]))])
@@ -87,6 +105,7 @@ func refresh() -> void:
             lines.append("Click to place %s for %s%s" % [str(def2["name"]), Style.money(cost), "" if cost <= state.money_cents else " (not enough cash)"])
         else:
             lines.append("%s cannot go here: %s" % [str(def2["name"]), reason_text(why)])
+    icon.visible = icon.texture != null
     detail_label.text = "\n".join(lines)
 
 

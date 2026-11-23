@@ -2,6 +2,7 @@ extends ScrollContainer
 ## Offers you can take and contracts you are working on.
 
 const Style = preload("res://ui/style.gd")
+const ArtLibrary = preload("res://game/art_library.gd")
 
 signal changed()
 signal message(text: String, kind: String)
@@ -64,6 +65,16 @@ func deliver_max(contract_id: int) -> void:
         return
 
 
+func _title_row(res_id: String, text: String) -> Control:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 6)
+    row.add_child(Style.icon_rect(ArtLibrary.resource_icon(res_id, 22), 22, Color.html(str(state.data["resources"][res_id]["color"]))))
+    var l: Label = _label(text, 14)
+    l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    row.add_child(l)
+    return row
+
+
 func _card(body: Control) -> PanelContainer:
     var p := PanelContainer.new()
     p.add_theme_stylebox_override("panel", Style.box(Style.PAPER_LIGHT, Style.INK_SOFT, 1, 3, 8))
@@ -89,7 +100,7 @@ func refresh() -> void:
         var over: float = (float(unit) / ref - 1.0) * 100.0
         var v := VBoxContainer.new()
         v.add_theme_constant_override("separation", 2)
-        v.add_child(_label("%s wants %d %s" % [client_name(str(o["client"])), qty, res_name(res_id)], 14))
+        v.add_child(_title_row(res_id, "%s wants %d %s" % [client_name(str(o["client"])), qty, res_name(res_id)]))
         v.add_child(_label("%s a unit, %s in all (+%.0f%% over market). %d days to deliver. Offer ends on day %d." % [Style.money(unit), Style.money0(unit * qty), over, int(o["deadline_days"]), int(o["expires_day"])], 12, Style.INK_SOFT))
         var held: int = state.stock(res_id)
         var row := HBoxContainer.new()
@@ -117,7 +128,7 @@ func refresh() -> void:
         var left_days: int = int(c["due_day"]) - state.day + 1
         var v2 := VBoxContainer.new()
         v2.add_theme_constant_override("separation", 3)
-        v2.add_child(_label("%s: %d %s at %s a unit" % [client_name(str(c["client"])), int(c["quantity"]), res_name(rid), Style.money(int(c["unit_price"]))], 14))
+        v2.add_child(_title_row(rid, "%s: %d %s at %s a unit" % [client_name(str(c["client"])), int(c["quantity"]), res_name(rid), Style.money(int(c["unit_price"]))]))
         var bar := ProgressBar.new()
         bar.show_percentage = false
         bar.custom_minimum_size = Vector2(0, 10)

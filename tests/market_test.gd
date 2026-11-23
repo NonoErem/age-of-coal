@@ -27,6 +27,8 @@ func neutral_data() -> Dictionary:
     bal["trend_reversion"] = 0.0
     var out: Dictionary = gd.duplicate()
     out["balance"] = bal
+    out["events"] = gd["events"].duplicate(true)
+    out["events"]["chance_per_day"] = 0.0
     return out
 
 
@@ -104,11 +106,9 @@ func _init() -> void:
 
     print("Market behaviour")
     gs = GameState.new(neutral_data())
-    gs.market.apply_shock("coal", 1.4, 3)
-    check(gs.market.spot_price("coal") > 1.39 * gs.market.base_price("coal"), "shock raises the price")
-    for _d in 3:
-        gs.market.advance_day(gs.rng)
-    check(is_equal_approx(float(gs.market.shock_mult["coal"]), 1.0), "shock expires after its duration")
+    gs.market.set_shock("coal", 1.4)
+    check(gs.market.spot_price("coal") > 1.39 * gs.market.base_price("coal"), "a shock raises the price")
+    check(gs.market.reference_price("coal") > 1.39 * gs.market.base_price("coal"), "and the contract reference price follows it")
 
     var gd: Dictionary = DataLoader.load_game_data()
     gs = GameState.new(gd, 7)

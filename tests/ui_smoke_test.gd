@@ -6,6 +6,7 @@ var failures: int = 0
 
 
 const SaveManager = preload("res://game/save_manager.gd")
+const MarketEvents = preload("res://sim/market_events.gd")
 const TEST_DIR := "user://test_saves_ui"
 
 
@@ -33,7 +34,8 @@ func _initialize() -> void:
     await process_frame
     await process_frame
     var s = scene.state
-    check(scene.tabs.get_tab_count() == 3, "screen builds with Market, Production and Contracts tabs")
+    s.data["events"]["chance_per_day"] = 0.0  # keep prices steady while the test counts exact money
+    check(scene.tabs.get_tab_count() == 4, "screen builds with Market, Production, Contracts and News tabs")
     check(scene.tabs.get_tab_title(2) == "Contracts (1)", "the contracts tab shows the waiting offer")
 
     print("Map and build mode")
@@ -95,6 +97,20 @@ func _initialize() -> void:
     check("paused: missing coke, limestone" in scene.event_log.text.get_parsed_text(), "and shows in the log with the resource name")
     scene.production_panel.locate.emit(9, 7)
     check(scene.map_view.selected == Vector2i(9, 7) and "Paused: missing coke, limestone" in scene.inspector.detail_label.text, "'Show' selects the building on the map")
+
+    print("Market events")
+    check(scene.tabs.get_tab_title(3) == "News", "the News tab starts empty")
+    s.board.append({"id": 901, "client": "gasworks", "resource": "coal", "quantity": 40, "unit_price": 1300, "deadline_days": 30, "offered_day": s.day, "expires_day": s.day + 20})
+    MarketEvents.announce(s, "miners_strike")
+    scene._log_day()
+    scene.market_panel.select_resource("coal")
+    scene.refresh_all()
+    check(scene.tabs.get_tab_title(3) == "News (1)", "an announced event shows on the tab")
+    check(scene.news_panel.shown_titles == ["Miners' strike"], "and in the News panel")
+    check("Miners' strike announced" in scene.event_log.text.get_parsed_text(), "the log announces it with its effect")
+    check(scene.market_panel.rows["coal"]["name"].text == "Coal !" and scene.market_panel.rows["iron_ore"]["name"].text == "Iron ore", "the Market tab flags the affected resource")
+    check("Miners' strike" in scene.market_panel.rows["coal"]["panel"].tooltip_text and scene.market_panel.detail_event.visible, "with its details on hover and under the chart")
+    check("withdrew its offer for coal" in scene.event_log.text.get_parsed_text(), "pulled offers are reported")
 
     print("Menu, saving and loading")
     scene.save_dir = TEST_DIR

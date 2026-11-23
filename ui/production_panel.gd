@@ -2,6 +2,7 @@ extends ScrollContainer
 ## What needs attention, what flows where, and every building at a glance.
 
 const Style = preload("res://ui/style.gd")
+const ArtLibrary = preload("res://game/art_library.gd")
 
 signal locate(x: int, y: int)
 
@@ -59,6 +60,7 @@ func refresh() -> void:
         else:
             text = "%s (%d,%d): deposit exhausted" % [str(def["name"]), int(b["x"]), int(b["y"])]
         var row := HBoxContainer.new()
+        row.add_child(Style.icon_rect(ArtLibrary.building_icon(str(b["type"]), 24), 24))
         var warn_l: Label = _label(text, 13, Style.WARN)
         warn_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         warn_l.custom_minimum_size = Vector2(320, 0)
@@ -82,6 +84,7 @@ func refresh() -> void:
     var used: Dictionary = state.last_report.get("consumed", {})
     var head := HBoxContainer.new()
     head.add_theme_constant_override("separation", 4)
+    head.add_child(Style.icon_rect(null, 0))
     for h in [["Resource", 96, HORIZONTAL_ALIGNMENT_LEFT], ["Stock", 52, HORIZONTAL_ALIGNMENT_RIGHT], ["Made", 48, HORIZONTAL_ALIGNMENT_RIGHT], ["Used", 48, HORIZONTAL_ALIGNMENT_RIGHT], ["Net", 48, HORIZONTAL_ALIGNMENT_RIGHT], ["Lasts", 56, HORIZONTAL_ALIGNMENT_RIGHT]]:
         head.add_child(_label(str(h[0]), 11, Style.INK_SOFT, int(h[1]), int(h[2])))
     box.add_child(head)
@@ -106,7 +109,8 @@ func refresh() -> void:
                 lasts_color = Style.BAD if days < 3.0 else (Style.WARN if days < 7.0 else Style.INK_SOFT)
         var r := HBoxContainer.new()
         r.add_theme_constant_override("separation", 4)
-        r.add_child(_label(str(res[id]["name"]), 13, Style.INK, 96))
+        r.add_child(Style.icon_rect(ArtLibrary.resource_icon(id, 18), 18, Color.html(str(res[id]["color"]))))
+        r.add_child(_label(str(res[id]["name"]), 13, Style.INK, 78))
         r.add_child(_label(str(s), 13, Style.INK, 52, HORIZONTAL_ALIGNMENT_RIGHT))
         r.add_child(_label(str(m), 13, Style.INK_SOFT, 48, HORIZONTAL_ALIGNMENT_RIGHT))
         r.add_child(_label(str(u), 13, Style.INK_SOFT, 48, HORIZONTAL_ALIGNMENT_RIGHT))
@@ -129,7 +133,7 @@ func refresh() -> void:
         match status2:
             "running":
                 if def2["kind"] == "factory":
-                    text2 = "running %d/%d batches" % [int(b["batches"]), int(def2.get("batches_per_day", 1))]
+                    text2 = "%d/%d batches" % [int(b["batches"]), int(def2.get("batches_per_day", 1))]
                 else:
                     text2 = "running"
             "paused_missing_input":
@@ -143,9 +147,10 @@ func refresh() -> void:
                 color = Style.INK_SOFT
         var row2 := HBoxContainer.new()
         row2.add_theme_constant_override("separation", 6)
-        row2.add_child(_label(str(def2["name"]), 13, Style.INK, 108))
-        row2.add_child(_label("(%d,%d)" % [int(b["x"]), int(b["y"])], 12, Style.INK_SOFT, 48))
-        row2.add_child(_label(text2, 13, color, 132))
+        row2.add_child(Style.icon_rect(ArtLibrary.building_icon(str(b["type"]), 24), 24))
+        row2.add_child(_label(str(def2["name"]), 13, Style.INK, 118))
+        row2.add_child(_label("(%d,%d)" % [int(b["x"]), int(b["y"])], 12, Style.INK_SOFT, 46))
+        row2.add_child(_label(text2, 13, color, 96))
         var bx2: int = int(b["x"])
         var by2: int = int(b["y"])
         var go := Button.new()

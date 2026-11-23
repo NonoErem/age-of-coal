@@ -8,19 +8,23 @@ Godot 4.3+. Open this folder in the Godot project manager and press F5 for the d
     godot --headless --path . -s tests/sim_test.gd        # map, mines, factories, upkeep, saving
     godot --headless --path . -s tests/contracts_test.gd  # contract board, delivery, penalties, fairness
     godot --headless --path . -s tests/save_test.gd       # save files: slots, damaged and old saves, continuing a loaded game
+    godot --headless --path . -s tests/events_test.gd     # market events: timeline, stacking, exposure, offers, saving
+    godot --headless --path . -s tests/art_test.gd        # every building, resource and deposit has well-formed art
     godot --headless --path . -s tests/economy_test.gd    # every building must pay for itself (reads the data files)
     godot --headless --path . -s tests/ui_smoke_test.gd   # drives the real screen like a player
     godot --headless --path . -s tests/sam_contract_probe.gd  # informational: buy-to-deliver profit per resource
+    godot --headless --path . -s tests/sam_event_probe.gd     # informational: profit from speculating on an announced event
 
 Exit code 0 means every check passed.
 
 ## Layout
 
-- `data/`   balance.json, resources.json, buildings.json, map.json, contracts.json. Tune numbers here, no code changes. Money is in integer cents.
-- `sim/`    pure game logic (data loader, market, production, contracts, game state). It never touches UI or scenes.
+- `data/`   balance.json, resources.json, buildings.json, map.json, contracts.json, events.json. Tune numbers here, no code changes. Money is in integer cents.
+- `sim/`    pure game logic (data loader, market, market events, production, contracts, game state). It never touches UI or scenes.
 - `game/`   main screen (coordinator), the tile map view and the save manager.
 - `ui/`     Iris's interface: style, top bar, build bar, inspector, event log, Market / Production / Contracts panels, price chart.
-- `tools/`  screenshot tool and scenarios (needs a display, e.g. xvfb), used to check layouts.
+- `art/`    the pictures, as SVG: buildings/, deposits/, resources/ (see Art below).
+- `tools/`  screenshot tool and scenarios (needs a display, e.g. xvfb), the art contact sheet, and make_art.py (the art generator).
 - `docs/`   screenshots of the interface.
 - `tests/`  headless regression tests, including Sam's exploit checks.
 
@@ -62,10 +66,31 @@ Depth for resources other than coal, steel and machinery defaults to 250 (`defau
 - **Menu (Esc or the Menu button):** three save slots and an autosave (every 10 days), each showing day, cash, buildings and when it was saved.
   Saving over a used slot, loading while you have progress, and starting a new game all ask first. Damaged or old saves are listed with the reason and never crash the game.
   The game is paused while the menu is open. Saves live in `user://saves` (Godot's user data folder for this project).
+- **News tab:** events announced, running and recently over, with their effect on prices, how long they last and what you hold of the goods involved.
+  In the Market tab an amber "!" marks resources an event is moving; hover a row or look under the chart for details.
 - **Log:** every build, trade, pause, delivery, failure and warnings before a deadline.
 
 To regenerate the screenshots: `xvfb-run -a godot --path . --rendering-driver opengl3 -s tools/screenshot.gd -- out.png res://tools/shot_scenarios.gd play`
 (scenarios: build, build_bad, play, production, contracts, bottleneck).
+
+## Art
+
+All pictures are SVG, 64 x 64 units, in `art/`:
+
+- `art/buildings/<building id>.svg`: one per building in buildings.json (shown on the map, in the build bar, in the inspector and in the Production tab).
+- `art/resources/<resource id>.svg`: one icon per resource (Market, Production flows and Contracts).
+- `art/deposits/<resource id>.svg`: the ore patch for each resource that has a deposit on the map. Richer deposits are drawn bigger.
+
+Style (Mara's direction): warm paper, ink outlines about 2 units thick, soot-grey roofs and brown walls, a little fire orange. Elevation views, ground line at y = 58.
+
+- **Replacing a picture:** overwrite the file with the same name. No code changes. Keep it 64 x 64 and avoid text, filters and gradients (the loader renders plain shapes).
+- **Adding a building or resource:** add its SVG under the same id. `tests/art_test.gd` fails if a picture is missing, malformed, empty, or left over from something removed.
+- **If a picture is missing** the game still runs: the map falls back to a plain square and panels to a coloured chip.
+- `tools/make_art.py` regenerates all the SVGs with a consistent palette. Once generated, the SVG files are the source of truth, edit them directly if you prefer.
+- `tools/art_sheet.gd` renders a contact sheet of everything at game sizes: `xvfb-run -a godot --path . --rendering-driver opengl3 -s tools/art_sheet.gd -- sheet.png`
+- **Exporting the game:** include the art as non-resource files (Project > Export > Resources > "Filters to export non-resource files": `art/*`), because the SVGs are read as plain files.
+- The map is drawn like a survey sheet: pencil hatching on empty ground (the same every time), a ruled grid, and coordinates along the top and left edges that match the (x, y) shown in the inspector.
+  A ring around a mine shows how much of its deposit is left.
 
 ## How much you move the market
 
@@ -78,6 +103,20 @@ Your trades move a price in proportion to how important you are in that market:
 - So a new company barely dents prices, producing a lot makes you matter even if you never trade, and a company holding a quarter of a market moves it at full strength.
 - The Market tab shows "You are x% of this market, so your trades move the price at y% strength", and the trade preview already includes it.
 - Tune it in balance.json (`market_impact`) and per resource (`market_volume`, `depth`).
+
+## Market events
+
+Defined in `data/events.json` (settings at the top, one entry per kind of event):
+
+- Roughly one new event every 12 days (`chance_per_day` 0.08), at most 3 announced or running at once.
+- Each is **announced 3-8 days ahead**. During the announcement prices already drift part of the way (`anticipation` 0.5), so
+  buying ahead pays only if you act right away (Sam's probe: about +16% if you buy at the news, about +3% two days later, a loss if you buy a huge amount).
+- Then the full effect applies for the event's duration. Events on the same resource **multiply**.
+- Events that crash prices (`targets_exposed`: coal glut, steel dumping, recession) get up to 4x likelier (`exposure_boost`) the bigger your share of the affected market.
+- Each kind has `min_day` (late-game events come late) and a `cooldown` before it can come back.
+- **Contracts and events:** no offers are made for goods an event is distorting, and existing offers for them are withdrawn at the announcement.
+  Without this, a fixed-price offer made during a boom could be filled with goods bought cheaply after it ended (Sam found about +50% risk-free).
+- Events use their own random stream, and are saved with the game.
 
 ## Contracts (no reputation yet)
 

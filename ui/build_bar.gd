@@ -3,6 +3,7 @@ extends HFlowContainer
 ## Press the same button again, right-click, or Esc to stop placing.
 
 const Style = preload("res://ui/style.gd")
+const ArtLibrary = preload("res://game/art_library.gd")
 
 signal tool_selected(building_id: String)
 
@@ -33,7 +34,11 @@ func setup(p_state) -> void:
             b.toggle_mode = true
             b.button_group = group
             b.add_theme_font_size_override("font_size", 12)
-            b.custom_minimum_size = Vector2(76, 40)
+            b.custom_minimum_size = Vector2(98, 42)
+            b.icon = ArtLibrary.building_icon(id, 30)
+            b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+            b.expand_icon = false
+            b.add_theme_constant_override("h_separation", 5)
             b.toggled.connect(func(on: bool) -> void: _on_toggled(id, on))
             buttons[id] = b
             add_child(b)

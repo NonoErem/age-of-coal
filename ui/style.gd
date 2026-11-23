@@ -62,6 +62,25 @@ static func hex(c: Color) -> String:
     return c.to_html(false)
 
 
+## A small picture. Falls back to a coloured square if the art is missing.
+static func icon_rect(tex: Texture2D, px: int, fallback: Color = Color("6e655a")) -> Control:
+    if tex == null:
+        var c := ColorRect.new()
+        c.color = fallback
+        c.custom_minimum_size = Vector2(px * 0.6, px * 0.6)
+        c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        return c
+    var r := TextureRect.new()
+    r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    r.custom_minimum_size = Vector2(px, px)
+    r.texture = tex
+    r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    return r
+
+
 # ---------- styling ----------
 
 static func box(bg: Color, border: Color = INK, border_w: int = 1, radius: int = 3, pad: int = 6) -> StyleBoxFlat:

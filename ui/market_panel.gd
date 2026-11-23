@@ -3,6 +3,8 @@ extends ScrollContainer
 
 const Style = preload("res://ui/style.gd")
 const Sparkline = preload("res://ui/sparkline.gd")
+const MarketEvents = preload("res://sim/market_events.gd")
+const ArtLibrary = preload("res://game/art_library.gd")
 
 signal changed()
 signal message(text: String, kind: String)
@@ -13,6 +15,7 @@ var rows: Dictionary = {}
 var detail_title: Label
 var detail_sub: Label
 var detail_share: Label
+var detail_event: Label
 var big_chart
 var qty_box: SpinBox
 var buy_preview: Label
@@ -46,9 +49,15 @@ func setup(p_state) -> void:
     detail_share.add_theme_font_size_override("font_size", 12)
     detail_share.mouse_filter = Control.MOUSE_FILTER_STOP
     box.add_child(detail_share)
+    detail_event = Label.new()
+    detail_event.add_theme_font_size_override("font_size", 12)
+    detail_event.add_theme_color_override("font_color", Style.WARN)
+    detail_event.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    detail_event.visible = false
+    box.add_child(detail_event)
     big_chart = Sparkline.new()
     big_chart.show_labels = true
-    big_chart.custom_minimum_size = Vector2(0, 70)
+    big_chart.custom_minimum_size = Vector2(0, 58)
     box.add_child(big_chart)
 
     var trade := HBoxContainer.new()
@@ -101,9 +110,9 @@ func _header_row() -> Control:
     var h := HBoxContainer.new()
     h.add_theme_constant_override("separation", 6)
     var spacer := Control.new()
-    spacer.custom_minimum_size = Vector2(10, 0)
+    spacer.custom_minimum_size = Vector2(20, 0)
     h.add_child(spacer)
-    var cols: Array = [["Resource", 84, HORIZONTAL_ALIGNMENT_LEFT], ["Stock", 34, HORIZONTAL_ALIGNMENT_RIGHT], ["Buy", 58, HORIZONTAL_ALIGNMENT_RIGHT], ["Sell", 58, HORIZONTAL_ALIGNMENT_RIGHT], ["Last 120 days", 70, HORIZONTAL_ALIGNMENT_CENTER], ["5 days", 46, HORIZONTAL_ALIGNMENT_RIGHT]]
+    var cols: Array = [["Resource", 88, HORIZONTAL_ALIGNMENT_LEFT], ["Stock", 34, HORIZONTAL_ALIGNMENT_RIGHT], ["Buy", 58, HORIZONTAL_ALIGNMENT_RIGHT], ["Sell", 58, HORIZONTAL_ALIGNMENT_RIGHT], ["Last 120 days", 64, HORIZONTAL_ALIGNMENT_CENTER], ["5 days", 46, HORIZONTAL_ALIGNMENT_RIGHT]]
     for c in cols:
         var l: Label = _cell(int(c[1]), int(c[2]), 11)
         l.text = str(c[0])
@@ -121,13 +130,8 @@ func _make_row(id: String) -> PanelContainer:
     var h := HBoxContainer.new()
     h.add_theme_constant_override("separation", 6)
     panel.add_child(h)
-    var chip := ColorRect.new()
-    chip.color = Color.html(str(state.data["resources"][id]["color"]))
-    chip.custom_minimum_size = Vector2(10, 10)
-    chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-    chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    h.add_child(chip)
-    var name_l: Label = _cell(84, HORIZONTAL_ALIGNMENT_LEFT)
+    h.add_child(Style.icon_rect(ArtLibrary.resource_icon(id, 20), 20, Color.html(str(state.data["resources"][id]["color"]))))
+    var name_l: Label = _cell(88, HORIZONTAL_ALIGNMENT_LEFT)
     name_l.text = str(state.data["resources"][id]["name"])
     h.add_child(name_l)
     var stock_l: Label = _cell(34)
@@ -137,11 +141,11 @@ func _make_row(id: String) -> PanelContainer:
     var sell_l: Label = _cell(58)
     h.add_child(sell_l)
     var spark = Sparkline.new()
-    spark.custom_minimum_size = Vector2(70, 22)
+    spark.custom_minimum_size = Vector2(64, 22)
     h.add_child(spark)
     var chg_l: Label = _cell(46)
     h.add_child(chg_l)
-    rows[id] = {"panel": panel, "stock": stock_l, "buy": buy_l, "sell": sell_l, "spark": spark, "change": chg_l}
+    rows[id] = {"panel": panel, "name": name_l, "stock": stock_l, "buy": buy_l, "sell": sell_l, "spark": spark, "change": chg_l}
     return panel
 
 
@@ -154,6 +158,14 @@ func refresh() -> void:
     for id in rows:
         var r: Dictionary = rows[id]
         var hist: Array = state.history.get(id, [])
+        var touching: Array = MarketEvents.touching(state, id)
+        var res_name: String = str(state.data["resources"][id]["name"])
+        r["name"].text = res_name + (" !" if not touching.is_empty() else "")
+        r["name"].add_theme_color_override("font_color", Style.WARN if not touching.is_empty() else Style.INK)
+        var tip: Array = []
+        for t in touching:
+            tip.append(_event_line(t["event"], t["status"], id))
+        r["panel"].tooltip_text = "\n".join(tip)
         r["stock"].text = str(state.stock(id))
         r["buy"].text = Style.money(state.market.quote_buy(id, 1))
         r["sell"].text = Style.money(state.market.quote_sell(id, 1))
@@ -178,8 +190,23 @@ func refresh() -> void:
     detail_share.text = "You are %.1f%% of this market, so your trades move the price at %d%% strength." % [share_pct, int(round(strength))]
     detail_share.add_theme_color_override("font_color", Style.INK_SOFT if strength < 50.0 else Style.WARN)
     detail_share.tooltip_text = "The market trades %d units of this a day. Your presence is what you produce beyond your own needs plus what you trade, averaged over about 10 days. A small company barely moves prices. At a quarter of the market you move them at full strength." % int(m.market_volume(id2))
+    var lines: Array = []
+    for t in MarketEvents.touching(state, id2):
+        lines.append(_event_line(t["event"], t["status"], id2))
+    if lines.size() > 2:
+        lines = [lines[0], "and %d more, see the News tab" % (lines.size() - 1)]
+    detail_event.visible = not lines.is_empty()
+    detail_event.text = "\n".join(lines)
     big_chart.set_data(state.history.get(id2, []), m.base_price(id2))
     _update_preview()
+
+
+func _event_line(e: Dictionary, status: String, id: String) -> String:
+    var def: Dictionary = state.data["events"]["events"][e["type"]]
+    var pct: int = int(round((float(e["effects"][id]) - 1.0) * 100.0))
+    if status == "active":
+        return "%s: %+d%%, until day %d" % [str(def["name"]), pct, int(e["end_day"])]
+    return "%s: %+d%%, starts day %d" % [str(def["name"]), pct, int(e["start_day"])]
 
 
 func _update_preview() -> void:

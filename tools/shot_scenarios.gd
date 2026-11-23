@@ -39,7 +39,7 @@ func run(scene: Control, name: String) -> void:
             scene.select_tile(11, 7)
             scene.tabs.current_tab = 1
             scene.refresh_all()
-        "play", "production", "contracts", "menu":
+        "play", "production", "contracts", "menu", "news", "newsmarket":
             s.money_cents = 6000000
             var coal: Vector2i = _find(s, "coal", 1.0)
             var iron: Vector2i = _find(s, "iron_ore", 1.0)
@@ -76,6 +76,18 @@ func run(scene: Control, name: String) -> void:
                 scene.tabs.current_tab = 1
             if name == "contracts":
                 scene.tabs.current_tab = 2
+            if name == "news" or name == "newsmarket":
+                var ME = load("res://sim/market_events.gd")
+                s.data["events"]["chance_per_day"] = 0.0
+                var strike: Dictionary = ME.announce(s, "miners_strike")
+                strike["start_day"] = s.day + 1
+                strike["end_day"] = s.day + 20
+                s.advance_day()
+                ME.announce(s, "shipbuilding")
+                scene._log_day()
+                scene.market_panel.select_resource("coal")
+                scene.tabs.current_tab = 3 if name == "news" else 0
+                scene.refresh_all()
             if name == "menu":
                 var SaveManager = load("res://game/save_manager.gd")
                 scene.save_dir = "user://shots_saves"
