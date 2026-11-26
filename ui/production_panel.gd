@@ -50,13 +50,15 @@ func refresh() -> void:
     for b in state.buildings:
         var def: Dictionary = defs[b["type"]]
         var status: String = str(b["status"])
-        if status != "paused_missing_input" and status != "depleted":
+        if status != "paused_missing_input" and status != "depleted" and status != "paused_storage_full":
             continue
         any = true
         attention_count += 1
         var text: String
         if status == "paused_missing_input":
             text = "%s (%d,%d): paused, missing %s" % [str(def["name"]), int(b["x"]), int(b["y"]), Style.names_text(b["missing"], res)]
+        elif status == "paused_storage_full":
+            text = "%s (%d,%d): stopped, storage is full" % [str(def["name"]), int(b["x"]), int(b["y"])]
         else:
             text = "%s (%d,%d): deposit exhausted" % [str(def["name"]), int(b["x"]), int(b["y"])]
         var row := HBoxContainer.new()
@@ -76,6 +78,25 @@ func refresh() -> void:
         box.add_child(row)
     if not any:
         box.add_child(_label("Everything is running." if not state.buildings.is_empty() else "No buildings yet.", 13, Style.INK_SOFT))
+
+    # ----- storage -----
+    box.add_child(HSeparator.new())
+    box.add_child(_heading("Storage"))
+    var stored: int = state.stored_units()
+    var cap: int = state.capacity()
+    var bar := ProgressBar.new()
+    bar.show_percentage = false
+    bar.max_value = float(cap)
+    bar.value = float(stored)
+    bar.custom_minimum_size = Vector2(0, 10)
+    var ratio: float = float(stored) / float(maxi(1, cap))
+    var fill: Color = Style.BAD if ratio >= 1.0 else (Style.WARN if ratio >= 0.9 else Style.GOOD)
+    bar.add_theme_stylebox_override("fill", Style.box(fill, fill, 0, 2, 0))
+    box.add_child(bar)
+    var warehouses: int = state.count_owned("warehouse")
+    var storage_note: Label = _label("%d of %d units. %d warehouse%s (+%d each). Full storage stops mines and blocks buying." % [stored, cap, warehouses, "" if warehouses == 1 else "s", int(state.data["buildings"]["warehouse"]["capacity"])], 12, Style.INK_SOFT)
+    storage_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    box.add_child(storage_note)
 
     # ----- flows -----
     box.add_child(HSeparator.new())
@@ -131,8 +152,17 @@ func refresh() -> void:
         var text2: String
         var color: Color = Style.GOOD
         match status2:
+            "stopped":
+                text2 = "stopped"
+                color = Style.SELECT
+            "paused_storage_full":
+                text2 = "storage full"
+                color = Style.WARN
             "running":
-                if def2["kind"] == "factory":
+                if def2["kind"] == "storage":
+                    text2 = "+%d room" % int(def2["capacity"])
+                    color = Style.INK_SOFT
+                elif def2["kind"] == "factory":
                     text2 = "%d/%d batches" % [int(b["batches"]), int(def2.get("batches_per_day", 1))]
                 else:
                     text2 = "running"

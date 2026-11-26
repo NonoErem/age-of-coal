@@ -13,6 +13,7 @@ var state
 var day_label: Label
 var money_label: Label
 var upkeep_label: Label
+var storage_label: Label
 var play_button: Button
 var speed_buttons: Dictionary = {}
 
@@ -41,6 +42,9 @@ func setup(p_state) -> void:
     upkeep_label.add_theme_color_override("font_color", Style.INK_SOFT)
     upkeep_label.tooltip_text = "What your buildings cost every day in their current state"
     row.add_child(upkeep_label)
+
+    storage_label = Label.new()
+    row.add_child(storage_label)
 
     var spacer := Control.new()
     spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -82,6 +86,12 @@ func refresh(running: bool, speed: int) -> void:
     money_label.text = Style.money(state.money_cents)
     money_label.add_theme_color_override("font_color", Style.BAD if state.money_cents < 0 else Style.INK)
     upkeep_label.text = "Upkeep %s/day" % Style.money0(Production.current_upkeep(state))
+    var used: int = state.stored_units()
+    var cap: int = state.capacity()
+    storage_label.text = "Storage %d / %d" % [used, cap]
+    var ratio: float = float(used) / float(maxi(1, cap))
+    storage_label.add_theme_color_override("font_color", Style.BAD if ratio >= 1.0 else (Style.WARN if ratio >= 0.9 else Style.INK_SOFT))
+    storage_label.tooltip_text = "Units in store out of the room you have. Mines and factories stop when it is full and you cannot buy more than fits. Warehouses add room."
     play_button.text = "Pause" if running else "Play"
     if speed_buttons.has(speed):
         speed_buttons[speed].set_pressed_no_signal(true)

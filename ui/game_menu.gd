@@ -4,16 +4,20 @@ extends Control
 
 const Style = preload("res://ui/style.gd")
 const SaveManager = preload("res://game/save_manager.gd")
+const DisplaySettings = preload("res://game/settings.gd")
 
 signal resume_requested()
 signal save_requested(slot: String)
 signal load_requested(slot: String)
 signal new_game_requested()
 signal quit_requested()
+signal display_changed(window_key: String, ui_scale: float)
 
 var save_dir: String = SaveManager.DEFAULT_DIR
 var has_progress: bool = false
 var rows_box: VBoxContainer
+var window_pick: OptionButton
+var scale_pick: OptionButton
 var bottom_box: HBoxContainer
 var message_label: Label
 var confirming: Dictionary = {}  # {"kind": "save" | "load" | "new", "slot": String}
@@ -54,6 +58,28 @@ func setup() -> void:
     rows_box.add_theme_constant_override("separation", 6)
     box.add_child(rows_box)
 
+    box.add_child(HSeparator.new())
+    var display_row := HBoxContainer.new()
+    display_row.add_theme_constant_override("separation", 8)
+    box.add_child(display_row)
+    var display_label := Label.new()
+    display_label.text = "Display"
+    display_label.custom_minimum_size = Vector2(72, 0)
+    display_label.add_theme_font_size_override("font_size", 15)
+    display_row.add_child(display_label)
+    window_pick = OptionButton.new()
+    window_pick.tooltip_text = "Window size. A window too big for the screen is shrunk to fit."
+    for key in DisplaySettings.WINDOW_ORDER:
+        window_pick.add_item(DisplaySettings.label(key))
+    window_pick.item_selected.connect(_on_display_pick)
+    display_row.add_child(window_pick)
+    scale_pick = OptionButton.new()
+    scale_pick.tooltip_text = "Size of text and panels. A bigger window gives a bigger map either way."
+    for sc in DisplaySettings.SCALES:
+        scale_pick.add_item("Text %d%%" % int(round(float(sc) * 100.0)))
+    scale_pick.item_selected.connect(_on_display_pick)
+    display_row.add_child(scale_pick)
+
     message_label = Label.new()
     message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     message_label.add_theme_font_size_override("font_size", 13)
@@ -62,6 +88,20 @@ func setup() -> void:
     bottom_box = HBoxContainer.new()
     bottom_box.add_theme_constant_override("separation", 8)
     box.add_child(bottom_box)
+
+
+## Shows the current display settings without announcing a change.
+func set_display(window_key: String, ui_scale: float) -> void:
+    window_pick.select(maxi(0, DisplaySettings.WINDOW_ORDER.find(window_key)))
+    var idx: int = 0
+    for i in DisplaySettings.SCALES.size():
+        if is_equal_approx(float(DisplaySettings.SCALES[i]), ui_scale):
+            idx = i
+    scale_pick.select(idx)
+
+
+func _on_display_pick(_index: int) -> void:
+    display_changed.emit(str(DisplaySettings.WINDOW_ORDER[window_pick.selected]), float(DisplaySettings.SCALES[scale_pick.selected]))
 
 
 func open(p_has_progress: bool) -> void:

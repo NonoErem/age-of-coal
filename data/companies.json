@@ -1,0 +1,174 @@
+{
+  "enabled": true,
+  "take_contracts": true,
+  "friction": 0.5,
+  "price_sensitivity": 1.6,
+  "mult_min": 0.6,
+  "mult_max": 1.8,
+  "mult_smoothing": 0.15,
+  "weak_below": 0.75,
+  "healthy_above": 0.95,
+  "shrink": 0.03,
+  "grow": 0.02,
+  "comfort_cash": 0.5,
+  "debt_limit": 0.5,
+  "revival_days": 80,
+  "revival_strength": 0.65,
+  "dividend_rate": 0.5,
+  "buy_floor": 0.15,
+  "sell_back": 0.35,
+  "min_hold_days": 30,
+  "max_owned": 3,
+  "take_base": 0.005,
+  "take_peak": 0.15,
+  "companies": [
+    {
+      "id": "blackwater",
+      "name": "Blackwater Colliery Co.",
+      "text": "Deep-shaft colliery. Sells coal to everyone and sets the tone of the cheapest market.",
+      "outputs": {
+        "coal": 60
+      },
+      "inputs": {},
+      "overhead": 28600,
+      "start_cash": 570000,
+      "base_value": 3400000,
+      "depth_bonus": {
+        "coal": 0.3
+      }
+    },
+    {
+      "id": "cornish",
+      "name": "Cornish Ore & Stone",
+      "text": "Iron ore, limestone and copper ore from the western quarries.",
+      "outputs": {
+        "iron_ore": 30,
+        "limestone": 40,
+        "copper_ore": 15
+      },
+      "inputs": {},
+      "overhead": 44400,
+      "start_cash": 890000,
+      "base_value": 5300000,
+      "depth_bonus": {
+        "iron_ore": 0.3,
+        "limestone": 0.3,
+        "copper_ore": 0.3
+      }
+    },
+    {
+      "id": "coke_gas",
+      "name": "Tees Coke & Gas",
+      "text": "Coke ovens beside a gasworks. Buys coal, sells coke.",
+      "outputs": {
+        "coke": 40
+      },
+      "inputs": {
+        "coal": 60
+      },
+      "overhead": 10600,
+      "start_cash": 210000,
+      "base_value": 1300000,
+      "depth_bonus": {
+        "coke": 0.35
+      }
+    },
+    {
+      "id": "harlow",
+      "name": "Harlow Ironworks",
+      "text": "Blast furnaces. Ore, coke and limestone in, pig iron out.",
+      "outputs": {
+        "pig_iron": 60
+      },
+      "inputs": {
+        "iron_ore": 80,
+        "coke": 40,
+        "limestone": 20
+      },
+      "overhead": 18100,
+      "start_cash": 360000,
+      "base_value": 2200000,
+      "depth_bonus": {
+        "pig_iron": 0.35
+      }
+    },
+    {
+      "id": "tyne",
+      "name": "Tyne Steel",
+      "text": "The big steelworks of the north-east. Pig iron and coal in, steel out.",
+      "outputs": {
+        "steel": 40
+      },
+      "inputs": {
+        "pig_iron": 60,
+        "coal": 20
+      },
+      "overhead": 20400,
+      "start_cash": 410000,
+      "base_value": 2400000,
+      "depth_bonus": {
+        "steel": 0.35
+      }
+    },
+    {
+      "id": "albion",
+      "name": "Albion Copper Works",
+      "text": "Copper smelting and refining.",
+      "outputs": {
+        "copper_ingot": 40
+      },
+      "inputs": {
+        "copper_ore": 80,
+        "coal": 40
+      },
+      "overhead": 8900,
+      "start_cash": 180000,
+      "base_value": 1100000,
+      "depth_bonus": {
+        "copper_ingot": 0.35
+      }
+    },
+    {
+      "id": "northern",
+      "name": "Northern Rail & Engineering",
+      "text": "Rolls rails and builds the odd locomotive engine and press.",
+      "outputs": {
+        "rails": 10,
+        "machinery": 2
+      },
+      "inputs": {
+        "steel": 26,
+        "copper_ingot": 4,
+        "coal": 2
+      },
+      "overhead": 13200,
+      "start_cash": 260000,
+      "base_value": 1600000,
+      "depth_bonus": {
+        "rails": 0.4,
+        "machinery": 0.5
+      }
+    },
+    {
+      "id": "midland",
+      "name": "Midland Tool & Die",
+      "text": "Tools for the trades, in volume.",
+      "outputs": {
+        "tools": 40
+      },
+      "inputs": {
+        "steel": 20,
+        "copper_ingot": 20
+      },
+      "overhead": 10900,
+      "start_cash": 220000,
+      "base_value": 1300000,
+      "depth_bonus": {
+        "tools": 0.35
+      }
+    }
+  ],
+  "max_input_mult": 1.8,
+  "idle_overhead": 0.5,
+  "rival_feel": 0.3
+}

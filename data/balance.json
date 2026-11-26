@@ -25,5 +25,7 @@
     "presence_smoothing": 0.1,
     "default_volume": 300
   },
-  "autosave_every_days": 10
+  "autosave_every_days": 10,
+  "base_storage": 250,
+  "demolish_refund": 0.3
 }

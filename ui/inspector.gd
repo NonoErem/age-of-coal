@@ -3,6 +3,10 @@ extends PanelContainer
 
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
+const Production = preload("res://sim/production.gd")
+
+signal stop_toggled(uid: int)
+signal demolish_confirmed(uid: int)
 
 var state
 var tool_id: String = ""
@@ -12,6 +16,8 @@ var icon: TextureRect
 var title_label: Label
 var detail_label: Label
 var bar: ProgressBar
+var actions: VBoxContainer
+var confirming_uid: int = -1
 
 
 func setup(p_state) -> void:
@@ -44,6 +50,10 @@ func setup(p_state) -> void:
     bar.custom_minimum_size = Vector2(0, 8)
     bar.visible = false
     box.add_child(bar)
+    actions = VBoxContainer.new()
+    actions.add_theme_constant_override("separation", 4)
+    actions.custom_minimum_size = Vector2(112, 0)
+    icon_holder.add_child(actions)
     refresh()
 
 
@@ -51,6 +61,9 @@ func refresh() -> void:
     bar.visible = false
     icon.texture = null
     icon.visible = false
+    for c in actions.get_children():
+        actions.remove_child(c)
+        c.queue_free()
     detail_label.add_theme_color_override("font_color", Style.INK_SOFT)
     if selected.x < 0:
         title_label.text = "Nothing selected"
@@ -68,22 +81,45 @@ func refresh() -> void:
         icon.texture = ArtLibrary.building(str(b["type"]))
         title_label.text = "%s at (%d, %d)" % [str(def["name"]), x, y]
         var status: String = str(b["status"])
-        if def["kind"] == "factory":
-            if status == "paused_missing_input":
-                lines.append("Paused: missing %s" % Style.names_text(b["missing"], res))
-                detail_label.add_theme_color_override("font_color", Style.WARN)
-            elif status == "running":
-                lines.append("Running %d of %d batches" % [int(b["batches"]), int(def.get("batches_per_day", 1))])
-            else:
-                lines.append("Starts on the next day")
+        var res_names: Callable = func(ids: Array) -> String: return Style.names_text(ids, res)
+        if def["kind"] == "storage":
+            lines.append("Adds room for %d units. In store: %d of %d, yard and warehouses together." % [int(def["capacity"]), state.stored_units(), state.capacity()])
+        elif def["kind"] == "factory":
+            match status:
+                "paused_missing_input":
+                    lines.append("Paused: missing %s" % res_names.call(b["missing"]))
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "paused_storage_full":
+                    lines.append("Stopped: nowhere to put what it makes. Storage is full.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "stopped":
+                    lines.append("Stopped by you. It makes and uses nothing.")
+                    detail_label.add_theme_color_override("font_color", Style.SELECT)
+                "running":
+                    lines.append("Running %d of %d batches" % [int(b["batches"]), int(def.get("batches_per_day", 1))])
+                _:
+                    lines.append("Starts on the next day")
             lines.append("Each batch: %s into %s" % [Style.items_text(def["inputs"], res), Style.items_text(def["outputs"], res)])
         else:
-            if status == "depleted":
-                lines.append("Deposit exhausted")
-                detail_label.add_theme_color_override("font_color", Style.WARN)
-            else:
-                lines.append("Produces %s a day, times richness" % Style.items_text(def["outputs"], res))
-        lines.append("Upkeep %s/day" % Style.money(int(def["upkeep_per_day"])))
+            match status:
+                "depleted":
+                    lines.append("Deposit exhausted. Demolish it to stop paying upkeep.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "paused_storage_full":
+                    lines.append("Stopped digging: storage is full.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "stopped":
+                    lines.append("Stopped by you. Nothing is dug.")
+                    detail_label.add_theme_color_override("font_color", Style.SELECT)
+                _:
+                    lines.append("Produces %s a day, times richness" % Style.items_text(def["outputs"], res))
+        var idle: float = float(state.data["balance"]["idle_upkeep_factor"])
+        var upkeep_now: int = Production.upkeep_of(def, status, idle)
+        if upkeep_now != int(def["upkeep_per_day"]):
+            lines.append("Upkeep %s/day (idle rate)" % Style.money(upkeep_now))
+        else:
+            lines.append("Upkeep %s/day" % Style.money(upkeep_now))
+        _build_actions(b, def)
     elif dep_id != "":
         var info: Dictionary = state.data["map"]["deposits"][dep_id]
         icon.texture = ArtLibrary.deposit(str(info["resource"]))
@@ -109,6 +145,71 @@ func refresh() -> void:
     detail_label.text = "\n".join(lines)
 
 
+func _build_actions(b: Dictionary, def: Dictionary) -> void:
+    var uid: int = int(b["uid"])
+    if confirming_uid != uid:
+        confirming_uid = -1
+    if def["kind"] != "storage":
+        var stopped: bool = bool(b.get("stopped", false))
+        var stop_button := Button.new()
+        stop_button.text = "Restart" if stopped else "Stop"
+        stop_button.tooltip_text = "Start it again. It begins on the next day. (P)" if stopped else "Stop it for now. It makes and uses nothing and pays a quarter of its upkeep. (P)"
+        stop_button.pressed.connect(on_stop_pressed)
+        actions.add_child(stop_button)
+    var refund: int = state.demolish_refund(uid)
+    if confirming_uid == uid:
+        var q := Label.new()
+        q.text = "Demolish for +%s?" % Style.money0(refund)
+        q.add_theme_font_size_override("font_size", 12)
+        q.add_theme_color_override("font_color", Style.WARN)
+        actions.add_child(q)
+        var row := HBoxContainer.new()
+        row.add_theme_constant_override("separation", 4)
+        var yes := Button.new()
+        yes.text = "Yes"
+        yes.pressed.connect(func() -> void: on_confirm(true))
+        row.add_child(yes)
+        var no := Button.new()
+        no.text = "No"
+        no.pressed.connect(func() -> void: on_confirm(false))
+        row.add_child(no)
+        actions.add_child(row)
+    else:
+        var demolish := Button.new()
+        demolish.text = "Demolish"
+        demolish.tooltip_text = "Pull it down and get %s back (30%% of what you paid, land included)." % Style.money(refund)
+        demolish.pressed.connect(on_demolish_pressed)
+        actions.add_child(demolish)
+
+
+func selected_uid() -> int:
+    if selected.x < 0:
+        return -1
+    var b: Dictionary = state.building_at(selected.x, selected.y)
+    return -1 if b.is_empty() else int(b["uid"])
+
+
+func on_stop_pressed() -> void:
+    var uid: int = selected_uid()
+    if uid >= 0:
+        stop_toggled.emit(uid)
+
+
+func on_demolish_pressed() -> void:
+    var uid: int = selected_uid()
+    if uid >= 0:
+        confirming_uid = uid
+        refresh()
+
+
+func on_confirm(yes: bool) -> void:
+    var uid: int = confirming_uid
+    confirming_uid = -1
+    if yes and uid >= 0:
+        demolish_confirmed.emit(uid)
+    refresh()
+
+
 static func reason_text(reason: String) -> String:
     match reason:
         "no_deposit": return "it needs a deposit."
@@ -117,5 +218,7 @@ static func reason_text(reason: String) -> String:
         "tile_occupied": return "there is a building here already."
         "out_of_bounds": return "outside the map."
         "not_available_yet": return "not available yet."
+        "storage_full": return "there is no room in storage."
+        "storage_in_use": return "your stock would no longer fit without it."
         "insufficient_funds": return "not enough cash."
     return reason

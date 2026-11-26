@@ -19,9 +19,9 @@ func setup(p_state) -> void:
     group = ButtonGroup.new()
     group.allow_unpress = true
     var defs: Dictionary = state.data["buildings"]
-    for kind in ["extractor", "factory"]:
+    for kind in ["extractor", "factory", "storage"]:
         var label := Label.new()
-        label.text = "Mines" if kind == "extractor" else "Factories"
+        label.text = "Mines" if kind == "extractor" else ("Factories" if kind == "factory" else "Storage")
         label.add_theme_color_override("font_color", Style.INK_SOFT)
         label.add_theme_font_size_override("font_size", 12)
         label.custom_minimum_size = Vector2(52, 0)
@@ -34,7 +34,7 @@ func setup(p_state) -> void:
             b.toggle_mode = true
             b.button_group = group
             b.add_theme_font_size_override("font_size", 12)
-            b.custom_minimum_size = Vector2(98, 42)
+            b.custom_minimum_size = Vector2(0, 42)
             b.icon = ArtLibrary.building_icon(id, 30)
             b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
             b.expand_icon = false
@@ -68,11 +68,14 @@ func refresh() -> void:
         var def: Dictionary = defs[id]
         var cost: int = state.build_cost(id)
         var b: Button = buttons[id]
-        b.text = "%s\n%s" % [str(def["name"]), Style.money0(cost)]
+        b.text = "%s\n%s" % [str(def.get("short_name", def["name"])), Style.money0(cost)]
         var tip: Array = [str(def["name"])]
         tip.append("Cost %s (+%d%% for each you already own), plus the land price on a deposit" % [Style.money0(cost), int(round(float(state.data["balance"]["cost_growth_per_owned"]) * 100.0))])
         tip.append("Upkeep %s a day (%s when idle)" % [Style.money(int(def["upkeep_per_day"])), Style.money(int(round(float(def["upkeep_per_day"]) * idle)))])
-        if def["kind"] == "extractor":
+        if def["kind"] == "storage":
+            tip.append("Adds room for %d more units of anything" % int(def["capacity"]))
+            tip.append("Goes on free ground")
+        elif def["kind"] == "extractor":
             tip.append("Makes %s a day, times the deposit's richness" % Style.items_text(def["outputs"], res))
             tip.append("Goes on a %s deposit" % str(res[def["deposit"]]["name"]).to_lower())
         else:

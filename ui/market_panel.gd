@@ -4,6 +4,7 @@ extends ScrollContainer
 const Style = preload("res://ui/style.gd")
 const Sparkline = preload("res://ui/sparkline.gd")
 const MarketEvents = preload("res://sim/market_events.gd")
+const Companies = preload("res://sim/companies.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
 
 signal changed()
@@ -195,6 +196,13 @@ func refresh() -> void:
         lines.append(_event_line(t["event"], t["status"], id2))
     if lines.size() > 2:
         lines = [lines[0], "and %d more, see the News tab" % (lines.size() - 1)]
+    var rival_pct: int = int(round((float(m.rival_mult[id2]) - 1.0) * 100.0))
+    var troubled: Array = Companies.troubled_for(state, id2)
+    if not troubled.is_empty() and abs(rival_pct) >= 1:
+        var names: Array = []
+        for t in troubled:
+            names.append("%s (%s)" % [str(state.data["companies"]["list"][t["company"]]["name"]), str(t["status"])])
+        lines.append("Rival trouble moves this price %+d%%: %s." % [rival_pct, ", ".join(names)])
     detail_event.visible = not lines.is_empty()
     detail_event.text = "\n".join(lines)
     big_chart.set_data(state.history.get(id2, []), m.base_price(id2))
@@ -217,8 +225,14 @@ func _update_preview() -> void:
 
     var cost: int = m.quote_buy(id, qty)
     var up: float = (m.pressure_after(id, qty, true) / p0 - 1.0) * 100.0
-    var can_buy: bool = cost <= state.money_cents
-    buy_preview.text = "Buy %d: %s (avg %s), price rises %.1f%%%s" % [qty, Style.money(cost), Style.money(int(float(cost) / qty)), up, "" if can_buy else ". Not enough cash"]
+    var has_room: bool = qty <= state.free_space()
+    var can_buy: bool = cost <= state.money_cents and has_room
+    var why_not: String = ""
+    if not has_room:
+        why_not = ". No room: only %d free (warehouses add more)" % state.free_space()
+    elif cost > state.money_cents:
+        why_not = ". Not enough cash"
+    buy_preview.text = "Buy %d: %s (avg %s), price rises %.1f%%%s" % [qty, Style.money(cost), Style.money(int(float(cost) / qty)), up, why_not]
     buy_preview.add_theme_color_override("font_color", Style.INK_SOFT if can_buy else Style.BAD)
     buy_button.disabled = not can_buy
 

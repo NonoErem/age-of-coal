@@ -120,13 +120,13 @@ static func make_theme() -> Theme:
     t.set_stylebox("panel", "PanelContainer", box(PAPER, INK, 1, 3, 8))
 
     var tab_sel: StyleBoxFlat = box(PAPER, INK, 1, 3, 6)
-    tab_sel.content_margin_left = 12
-    tab_sel.content_margin_right = 12
+    tab_sel.content_margin_left = 6
+    tab_sel.content_margin_right = 6
     tab_sel.corner_radius_bottom_left = 0
     tab_sel.corner_radius_bottom_right = 0
     var tab_un: StyleBoxFlat = box(PAPER_DEEP, INK, 1, 3, 6)
-    tab_un.content_margin_left = 12
-    tab_un.content_margin_right = 12
+    tab_un.content_margin_left = 6
+    tab_un.content_margin_right = 6
     tab_un.corner_radius_bottom_left = 0
     tab_un.corner_radius_bottom_right = 0
     var tab_hover: StyleBoxFlat = tab_un.duplicate()

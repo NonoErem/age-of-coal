@@ -82,6 +82,13 @@ func _card(body: Control) -> PanelContainer:
     return p
 
 
+## Offers that end soonest first: those are the ones that will not wait.
+func offers_sorted() -> Array:
+    var list: Array = state.board.duplicate()
+    list.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["expires_day"]) < int(b["expires_day"]))
+    return list
+
+
 func refresh() -> void:
     for c in box.get_children():
         c.queue_free()
@@ -91,7 +98,7 @@ func refresh() -> void:
     box.add_child(h1)
     if state.board.is_empty():
         box.add_child(_label("No offers right now. New ones turn up every few days.", 13, Style.INK_SOFT))
-    for o in state.board:
+    for o in offers_sorted():
         var oid: int = int(o["id"])
         var res_id: String = str(o["resource"])
         var qty: int = int(o["quantity"])
@@ -101,13 +108,19 @@ func refresh() -> void:
         var v := VBoxContainer.new()
         v.add_theme_constant_override("separation", 2)
         v.add_child(_title_row(res_id, "%s wants %d %s" % [client_name(str(o["client"])), qty, res_name(res_id)]))
-        v.add_child(_label("%s a unit, %s in all (+%.0f%% over market). %d days to deliver. Offer ends on day %d." % [Style.money(unit), Style.money0(unit * qty), over, int(o["deadline_days"]), int(o["expires_day"])], 12, Style.INK_SOFT))
+        v.add_child(_label("%s a unit, %s in all (+%.0f%% over market). %d days to deliver once accepted." % [Style.money(unit), Style.money0(unit * qty), over, int(o["deadline_days"])], 12, Style.INK_SOFT))
         var held: int = state.stock(res_id)
         var row := HBoxContainer.new()
         var hold: Label = _label("You hold %d of %d" % [held, qty], 12, Style.GOOD if held >= qty else Style.INK_SOFT)
         hold.autowrap_mode = TextServer.AUTOWRAP_OFF
         hold.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         row.add_child(hold)
+        var left_days: int = int(o["expires_day"]) - state.day + 1
+        var ends: Label = _label("Gone tonight!" if left_days <= 1 else "Open %d more days" % left_days, 12, Style.BAD if left_days <= 1 else (Style.WARN if left_days <= 3 else Style.INK_SOFT))
+        ends.autowrap_mode = TextServer.AUTOWRAP_OFF
+        ends.tooltip_text = "The better an offer pays, the sooner someone else takes it. Last day to accept: day %d." % int(o["expires_day"])
+        ends.mouse_filter = Control.MOUSE_FILTER_STOP
+        row.add_child(ends)
         var b := Button.new()
         b.text = "Accept"
         b.disabled = state.active_contracts.size() >= max_active
@@ -125,7 +138,7 @@ func refresh() -> void:
     for c in state.active_contracts:
         var cid: int = int(c["id"])
         var rid: String = str(c["resource"])
-        var left_days: int = int(c["due_day"]) - state.day + 1
+        var left_days_c: int = int(c["due_day"]) - state.day + 1
         var v2 := VBoxContainer.new()
         v2.add_theme_constant_override("separation", 3)
         v2.add_child(_title_row(rid, "%s: %d %s at %s a unit" % [client_name(str(c["client"])), int(c["quantity"]), res_name(rid), Style.money(int(c["unit_price"]))]))
@@ -136,8 +149,8 @@ func refresh() -> void:
         bar.value = float(c["delivered"])
         v2.add_child(bar)
         var row2 := HBoxContainer.new()
-        var due_color: Color = Style.BAD if left_days <= 3 else (Style.WARN if left_days <= 7 else Style.INK_SOFT)
-        var prog: Label = _label("%d of %d delivered. %d days left." % [int(c["delivered"]), int(c["quantity"]), left_days], 12, due_color)
+        var due_color: Color = Style.BAD if left_days_c <= 3 else (Style.WARN if left_days_c <= 7 else Style.INK_SOFT)
+        var prog: Label = _label("%d of %d delivered. %d days left." % [int(c["delivered"]), int(c["quantity"]), left_days_c], 12, due_color)
         prog.autowrap_mode = TextServer.AUTOWRAP_OFF
         prog.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         row2.add_child(prog)
