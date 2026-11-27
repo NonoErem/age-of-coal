@@ -1,4 +1,6 @@
 extends RefCounted
+
+const Crisis = preload("res://sim/crisis.gd")
 ## Sets the game up in a few interesting situations so the screens can be photographed.
 
 func _find(state, resource: String, richness: float) -> Vector2i:
@@ -60,6 +62,47 @@ func run(scene: Control, name: String) -> void:
                 scene._log_day()
             scene.select_tile(11, 7)
             scene.tabs.current_tab = 1
+            scene.refresh_all()
+        "telegram":
+            s.data["events"]["chance_per_day"] = 0.0
+            for d in 329:
+                s.advance_day()
+            scene._log_day()
+            scene.refresh_all()
+        "invasion":
+            s.data["events"]["chance_per_day"] = 0.0
+            s.money_cents = 50000000
+            for spot in [["coke_oven", 9, 7], ["blast_furnace", 11, 7], ["steelworks", 13, 8], ["warehouse", 10, 9], ["munitions_works", 12, 10], ["mg_nest", 7, 5], ["mg_nest", 15, 6], ["mg_nest", 8, 11], ["field_battery", 12, 5]]:
+                s.build(spot[0], spot[1], spot[2])
+            for id in s.revealed_deposit_ids():
+                var d: Dictionary = s.data["map"]["deposits"][id]
+                if abs(int(d["x"]) - 11) <= 6 and abs(int(d["y"]) - 8) <= 5:
+                    s.build({"coal": "coal_mine", "iron_ore": "iron_mine", "limestone": "limestone_quarry", "copper_ore": "copper_mine"}[d["resource"]], int(d["x"]), int(d["y"]))
+            s.money_cents = 4200000
+            for d in 455:
+                if s.stock("munitions") < 20:
+                    s.inventory["munitions"] = s.stock("munitions") + 20
+                for b in s.buildings:
+                    if Crisis.is_damaged(s, b):
+                        s.money_cents += s.repair_cost(int(b["uid"]))
+                        s.repair(int(b["uid"]))
+                s.advance_day()
+            s.money_cents = 3850000
+            for d in 18:
+                s.advance_day()
+                scene._log_day()
+            scene.telegram.close()
+            var hit: Dictionary = {}
+            for b in s.buildings:
+                if int(b["health"]) < Crisis.max_health(s, b) and str(s.data["buildings"][b["type"]]["kind"]) != "defense":
+                    hit = b
+            if hit.is_empty():
+                hit = s.buildings[2]
+                hit["health"] = 70
+                hit["status"] = "damaged"
+            scene.map_view.cover_button.button_pressed = true
+            scene.select_tile(int(hit["x"]), int(hit["y"]))
+            scene.market_panel.select_resource("munitions")
             scene.refresh_all()
         "survey":
             s.money_cents = 3000000

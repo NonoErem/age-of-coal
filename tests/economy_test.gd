@@ -25,8 +25,8 @@ func _init() -> void:
     print("%-18s %10s %9s %8s %9s" % ["Building", "Net $/day", "Build $", "Payback", "Limit"])
     for id in buildings:
         var b: Dictionary = buildings[id]
-        if b["kind"] == "storage":
-            continue
+        if b["kind"] == "storage" or b["kind"] == "defense":
+            continue  # they earn nothing: storage holds, defenses protect
         var upkeep: float = float(b["upkeep_per_day"]) / 100.0
         var build: float = float(b["build_cost"]) / 100.0
         var gross: float

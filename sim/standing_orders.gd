@@ -83,6 +83,10 @@ static func _execute(state, o: Dictionary) -> String:
         if afford < n:
             n = afford
             result = "partial_money" if n > 0 else "no_money"
+    var room: int = state.market.trade_room(res)
+    if room >= 0 and n > room:
+        n = room
+        result = "partial_limit" if n > 0 else "market_limit"
     if n > 0 and int(o["limit_cents"]) > 0:
         var total: int = state.market.quote_sell(res, n) if is_sell else state.market.quote_buy(res, n)
         var avg: float = float(total) / float(n)

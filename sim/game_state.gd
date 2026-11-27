@@ -11,7 +11,8 @@ const StandingOrders = preload("res://sim/standing_orders.gd")
 const Companies = preload("res://sim/companies.gd")
 const Survey = preload("res://sim/survey.gd")
 const Rules = preload("res://sim/rules.gd")
-const SAVE_VERSION := 9
+const Crisis = preload("res://sim/crisis.gd")
+const SAVE_VERSION := 10
 const HISTORY_DAYS := 120
 
 signal day_advanced(day: int)
@@ -51,6 +52,11 @@ var rivals: Dictionary = {}        # company id -> {cash, strength, status, owne
 var rival_rng := RandomNumberGenerator.new()  # separate stream: rivals taking offers never disturb prices or offers
 var rival_news: Array = []         # what the rival companies did today (not saved)
 var rival_stats: Dictionary = {"dividends_cents": 0, "bought": 0, "wiped_out": 0, "offers_taken": 0}
+var aliens: Array = []             # creatures on the map (see crisis.gd)
+var alien_next_id: int = 1
+var alien_rng := RandomNumberGenerator.new()  # separate stream: the invasion never disturbs prices or offers
+var alien_news: Array = []         # what the crisis and the creatures did today (not saved)
+var crisis_stats: Dictionary = {}
 var history: Dictionary = {}       # resource id -> end-of-day spot prices in cents, newest last
 var _deposit_tiles: Dictionary = {}  # "x,y" -> deposit id
 
@@ -75,6 +81,8 @@ func _init(game_data: Dictionary, p_seed: int = 12345) -> void:
         deposits[id] = {"remaining": int(d["amount"])}
         _deposit_tiles[tile_key(int(d["x"]), int(d["y"]))] = id
     Survey.reset(self)
+    Crisis.reset(self)
+    Crisis.apply_market(self)
     Contracts.setup(self)
     _record_history()
 
@@ -128,6 +136,8 @@ func buy(id: String, qty: int) -> Dictionary:
         return {"ok": false, "reason": "invalid_quantity"}
     if qty > free_space():
         return {"ok": false, "reason": "storage_full", "free": free_space()}
+    if market.trade_room(id) >= 0 and qty > market.trade_room(id):
+        return {"ok": false, "reason": "market_limit", "room": market.trade_room(id)}
     var quote: int = market.quote_buy(id, qty)
     if quote > money_cents:
         return {"ok": false, "reason": "insufficient_funds", "cost": quote}
@@ -144,6 +154,8 @@ func sell(id: String, qty: int) -> Dictionary:
         return {"ok": false, "reason": "invalid_quantity"}
     if stock(id) < qty:
         return {"ok": false, "reason": "insufficient_stock"}
+    if market.trade_room(id) >= 0 and qty > market.trade_room(id):
+        return {"ok": false, "reason": "market_limit", "room": market.trade_room(id)}
     var revenue: int = market.execute_sell(id, qty)
     money_cents += revenue
     inventory[id] = stock(id) - qty
@@ -215,6 +227,8 @@ func check_placement(building_id: String, x: int, y: int) -> String:
         return "out_of_bounds"
     if tile_owner.has(tile_key(x, y)):
         return "tile_occupied"
+    if not Crisis.alien_at(self, x, y).is_empty():
+        return "alien_here"
     var dep_id: String = deposit_id_at(x, y)
     if def["kind"] == "extractor":
         if dep_id == "":
@@ -227,7 +241,7 @@ func check_placement(building_id: String, x: int, y: int) -> String:
 
 
 ## Mines and quarries go on a deposit of their resource. Factories go on free ground.
-## Nothing is ever destroyed: a factory without inputs is only paused.
+## Running out of inputs never removes a factory: it is only paused. (Only the invasion can destroy a building.)
 func build(building_id: String, x: int, y: int) -> Dictionary:
     var why: String = check_placement(building_id, x, y)
     if why != "":
@@ -242,10 +256,26 @@ func build(building_id: String, x: int, y: int) -> Dictionary:
         "deposit_id": dep_id, "status": Production.STATUS_BUILT, "missing": [], "carry": {}, "batches": 0,
         "stopped": false, "paid": cost,
     }
+    b["health"] = Crisis.max_health(self, b)
+    if def_kind(building_id) == "defense":
+        b["status"] = Crisis.STATUS_READY
     next_uid += 1
     buildings.append(b)
     tile_owner[tile_key(x, y)] = int(b["uid"])
     return {"ok": true, "cost": cost, "uid": int(b["uid"])}
+
+
+func def_kind(building_id: String) -> String:
+    return str(data["buildings"][building_id]["kind"])
+
+
+func repair_cost(uid: int) -> int:
+    var b: Dictionary = building_by_uid(uid)
+    return 0 if b.is_empty() else Crisis.repair_cost(self, b)
+
+
+func repair(uid: int) -> Dictionary:
+    return Crisis.repair(self, uid)
 
 
 func building_by_uid(uid: int) -> Dictionary:
@@ -288,7 +318,12 @@ func set_building_stopped(uid: int, stopped: bool) -> Dictionary:
     if data["buildings"][b["type"]]["kind"] == "storage":
         return {"ok": false, "reason": "cannot_stop"}
     b["stopped"] = stopped
-    b["status"] = Production.STATUS_STOPPED if stopped else Production.STATUS_BUILT
+    if stopped:
+        b["status"] = Production.STATUS_STOPPED
+    elif Crisis.is_damaged(self, b) and def_kind(b["type"]) != "defense":
+        b["status"] = Crisis.STATUS_DAMAGED
+    else:
+        b["status"] = Crisis.STATUS_READY if def_kind(b["type"]) == "defense" else Production.STATUS_BUILT
     b["missing"] = []
     b["batches"] = 0
     return {"ok": true, "stopped": stopped}
@@ -341,7 +376,7 @@ func sell_company(id: String) -> Dictionary:
 # ---------- clock ----------
 
 func advance_day() -> void:
-    # Order of a day: production -> upkeep -> standing orders -> rules -> rival companies -> market (prices recover, presence updates) -> new day -> market events -> price history -> contracts -> rivals take offers.
+    # Order of a day: production -> upkeep -> standing orders -> rules -> rival companies -> market (prices recover, presence updates) -> new day -> crisis (defenses fire, creatures move and attack, new ones land) -> market events -> price history -> contracts -> rivals take offers.
     # Still to come: events before the market; transport and a bankruptcy check.
     events = []
     last_report = Production.run_day(self)
@@ -351,6 +386,9 @@ func advance_day() -> void:
     Companies.run_day(self)
     market.advance_day(rng, _net_surplus(last_report))
     day += 1
+    Crisis.apply_market(self)
+    Crisis.run_day(self)        # overnight: defenses fire, creatures move and attack, new ones land
+    Crisis.calendar_news(self)
     MarketEvents.daily_update(self)
     _record_history()
     Contracts.daily_update(self)
@@ -391,6 +429,7 @@ func to_dict() -> Dictionary:
         "rivals": Companies.to_dict(self),
         "survey": Survey.to_dict(self),
         "rules": Rules.to_dict(self),
+        "crisis": Crisis.to_dict(self),
         "contracts": {
             "board": board.duplicate(true), "active": active_contracts.duplicate(true),
             "stats": contract_stats.duplicate(), "next_id": contract_next_id,
@@ -402,7 +441,7 @@ func to_dict() -> Dictionary:
 func load_dict(d: Dictionary) -> bool:
     if int(d.get("version", 0)) != SAVE_VERSION:
         return false
-    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts", "market_events", "event_rng_state", "orders", "rivals", "survey", "rules"]:
+    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts", "market_events", "event_rng_state", "orders", "rivals", "survey", "rules", "crisis"]:
         if not d.has(key):
             return false
     seed_value = int(d["seed"])
@@ -430,7 +469,11 @@ func load_dict(d: Dictionary) -> bool:
             "deposit_id": str(src["deposit_id"]), "status": str(src["status"]),
             "missing": src["missing"].duplicate(), "carry": {}, "batches": int(src.get("batches", 0)),
             "stopped": bool(src.get("stopped", false)), "paid": int(src.get("paid", 0)),
+            "ammo_warned": bool(src.get("ammo_warned", false)),
         }
+        if not data["buildings"].has(b["type"]):
+            return false
+        b["health"] = int(src.get("health", Crisis.max_health(self, b)))
         for res in src["carry"]:
             b["carry"][res] = float(src["carry"][res])
         buildings.append(b)
@@ -491,6 +534,9 @@ func load_dict(d: Dictionary) -> bool:
             revealed[b["deposit_id"]] = true  # a mine always stands on a deposit you know
     if not Rules.load_dict(self, d["rules"]):
         return false
+    if not Crisis.load_dict(self, d["crisis"]):
+        return false
+    Crisis.apply_market(self)
     var c: Dictionary = d["contracts"]
     contract_rng.seed = seed_value + 7919
     contract_rng.state = String(c["rng_state"]).to_int()

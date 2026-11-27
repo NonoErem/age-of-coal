@@ -9,5 +9,6 @@
   {"id": "steel",        "name": "Steel",        "tier": "intermediate", "base_price": 9000,  "market_volume": 300, "color": "#5f7480", "depth": 250},
   {"id": "tools",        "name": "Tools",        "tier": "finished",     "base_price": 8500,  "market_volume": 200, "color": "#7a6a4f"},
   {"id": "rails",        "name": "Rails",        "tier": "finished",     "base_price": 22000, "market_volume": 80, "color": "#4f5d6b"},
-  {"id": "machinery",    "name": "Machinery",    "tier": "finished",     "base_price": 45000, "market_volume": 30, "color": "#3f4f45", "depth": 60}
+  {"id": "machinery",    "name": "Machinery",    "tier": "finished",     "base_price": 45000, "market_volume": 30, "color": "#3f4f45", "depth": 60},
+  {"id": "munitions",    "name": "Munitions",    "tier": "intermediate", "base_price": 2500,  "market_volume": 300, "color": "#6e6a3a"}
 ]

@@ -13,6 +13,8 @@ var state
 var buttons: Dictionary = {}
 var survey_buttons: Dictionary = {}   # level -> Button
 var group: ButtonGroup
+var group_labels: Array = []
+const COMPACT_BELOW := 1000.0   # narrower than this: no group labels, tighter buttons
 
 
 func setup(p_state) -> void:
@@ -22,13 +24,14 @@ func setup(p_state) -> void:
     group = ButtonGroup.new()
     group.allow_unpress = true
     var defs: Dictionary = state.data["buildings"]
-    for kind in ["extractor", "factory", "storage"]:
+    for kind in ["extractor", "factory", "storage", "defense"]:
         var label := Label.new()
-        label.text = "Mines" if kind == "extractor" else ("Factories" if kind == "factory" else "Storage")
+        label.text = {"extractor": "Mines", "factory": "Factories", "storage": "Storage", "defense": "Defenses"}[kind]
         label.add_theme_color_override("font_color", Style.INK_SOFT)
         label.add_theme_font_size_override("font_size", 12)
         label.custom_minimum_size = Vector2(52, 0)
         label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        group_labels.append(label)
         add_child(label)
         for id in defs:
             if defs[id]["kind"] != kind:
@@ -52,6 +55,7 @@ func setup(p_state) -> void:
     slabel.add_theme_font_size_override("font_size", 12)
     slabel.custom_minimum_size = Vector2(52, 0)
     slabel.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    group_labels.append(slabel)
     add_child(slabel)
     for level in [1, 2]:
         var sb := Button.new()
@@ -63,6 +67,23 @@ func setup(p_state) -> void:
         survey_buttons[level] = sb
         add_child(sb)
     refresh()
+
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_RESIZED:
+        _fit()
+
+
+## On a narrow window the group labels go (the icons say enough) and the buttons get tighter.
+func _fit() -> void:
+    var compact: bool = size.x > 0.0 and size.x < COMPACT_BELOW
+    for l in group_labels:
+        l.visible = not compact
+    var all: Array = buttons.values() + survey_buttons.values()
+    for b in all:
+        b.add_theme_font_size_override("font_size", 11 if compact else 12)
+        b.add_theme_constant_override("h_separation", 2 if compact else 5)
+    add_theme_constant_override("h_separation", 2 if compact else 4)
 
 
 func _on_toggled(id: String, on: bool) -> void:
@@ -115,7 +136,12 @@ func refresh() -> void:
         var tip: Array = [str(def["name"])]
         tip.append("Cost %s (+%d%% for each you already own), plus the land price on a deposit" % [Style.money0(cost), int(round(float(state.data["balance"]["cost_growth_per_owned"]) * 100.0))])
         tip.append("Upkeep %s a day (%s when idle)" % [Style.money(int(def["upkeep_per_day"])), Style.money(int(round(float(def["upkeep_per_day"]) * idle)))])
-        if def["kind"] == "storage":
+        if def["kind"] == "defense":
+            tip.append("Fires at the nearest creature within %d tiles: %d damage a day" % [int(def["range"]), int(def["damage"])])
+            tip.append("Uses %s on each day it fires. No ammunition, no fire" % Style.items_text(def.get("ammo", {}), res))
+            tip.append("%d health. Keeps firing while damaged" % int(def.get("health", 150)))
+            tip.append("Goes on free ground. Put it where the creatures will come")
+        elif def["kind"] == "storage":
             tip.append("Adds room for %d more units of anything" % int(def["capacity"]))
             tip.append("Goes on free ground")
         elif def["kind"] == "extractor":

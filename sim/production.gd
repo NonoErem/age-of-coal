@@ -4,15 +4,17 @@ extends RefCounted
 ## A factory is never removed when its inputs run out: it is paused with a status
 ## and restarts by itself as soon as the inputs are back.
 
+const Crisis = preload("res://sim/crisis.gd")
 const STATUS_BUILT := "built"
 const STATUS_RUNNING := "running"
 const STATUS_PAUSED := "paused_missing_input"
 const STATUS_DEPLETED := "depleted"
 const STATUS_BLOCKED := "paused_storage_full"  # nowhere to put what it makes
 const STATUS_STOPPED := "stopped"              # paused by the player
+const STATUS_DAMAGED := "damaged"              # hit by the creatures: does nothing until repaired
 
 ## States where a building only keeps a skeleton crew.
-const IDLE_STATUSES := [STATUS_PAUSED, STATUS_DEPLETED, STATUS_BLOCKED, STATUS_STOPPED]
+const IDLE_STATUSES := [STATUS_PAUSED, STATUS_DEPLETED, STATUS_BLOCKED, STATUS_STOPPED, STATUS_DAMAGED]
 
 
 ## Runs one day for every building and returns a report.
@@ -28,6 +30,11 @@ static func run_day(state) -> Dictionary:
         var previous: String = str(b["status"])
         if b.get("stopped", false):
             b["status"] = STATUS_STOPPED
+        elif kind == "defense":
+            pass  # defenses act in the crisis step; they keep a full crew
+        elif int(b.get("health", 1 << 30)) < Crisis.max_health(state, b):
+            b["status"] = STATUS_DAMAGED
+            b["batches"] = 0
         elif kind == "extractor":
             _run_extractor(state, b, def, produced)
         elif kind == "factory":

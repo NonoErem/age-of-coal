@@ -11,7 +11,7 @@
   "quantities": {
     "coal": [30, 120], "iron_ore": [20, 80], "limestone": [30, 100], "copper_ore": [15, 50],
     "coke": [20, 60], "pig_iron": [15, 50], "copper_ingot": [10, 30], "steel": [10, 40],
-    "tools": [10, 40], "rails": [5, 20], "machinery": [2, 6]
+    "tools": [10, 40], "rails": [5, 20], "machinery": [2, 6], "munitions": [20, 80]
   },
   "clients": [
     {"id": "gasworks",   "name": "Gasworks",           "wants": {"coal": 3, "coke": 1}},
@@ -20,7 +20,7 @@
     {"id": "railway",    "name": "Railway company",    "wants": {"rails": 3, "steel": 2}},
     {"id": "shipyard",   "name": "Shipyard",           "wants": {"steel": 3, "machinery": 2, "pig_iron": 1}},
     {"id": "ironmonger", "name": "Ironmonger",         "wants": {"tools": 3, "pig_iron": 1, "copper_ingot": 1}},
-    {"id": "army",       "name": "Army depot",         "wants": {"tools": 2, "steel": 2, "coal": 1, "rails": 1}},
+    {"id": "army",       "name": "Army depot",         "wants": {"tools": 2, "steel": 2, "coal": 1, "rails": 1, "munitions": 2}},
     {"id": "electrical", "name": "Electrical works",   "wants": {"copper_ore": 2, "copper_ingot": 3}}
   ]
 }

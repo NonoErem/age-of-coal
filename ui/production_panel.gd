@@ -50,7 +50,7 @@ func refresh() -> void:
     for b in state.buildings:
         var def: Dictionary = defs[b["type"]]
         var status: String = str(b["status"])
-        if status != "paused_missing_input" and status != "depleted" and status != "paused_storage_full":
+        if not ["paused_missing_input", "depleted", "paused_storage_full", "damaged", "no_ammo"].has(status) and not (str(def["kind"]) == "defense" and int(b.get("health", 0)) < int(def.get("health", 0))):
             continue
         any = true
         attention_count += 1
@@ -59,6 +59,12 @@ func refresh() -> void:
             text = "%s (%d,%d): paused, missing %s" % [str(def["name"]), int(b["x"]), int(b["y"]), Style.names_text(b["missing"], res)]
         elif status == "paused_storage_full":
             text = "%s (%d,%d): stopped, storage is full" % [str(def["name"]), int(b["x"]), int(b["y"])]
+        elif status == "damaged":
+            text = "%s (%d,%d): damaged, idle until repaired (%d health left)" % [str(def["name"]), int(b["x"]), int(b["y"]), int(b["health"])]
+        elif status == "no_ammo":
+            text = "%s (%d,%d): no ammunition" % [str(def["name"]), int(b["x"]), int(b["y"])]
+        elif str(def["kind"]) == "defense":
+            text = "%s (%d,%d): damaged, %d health left" % [str(def["name"]), int(b["x"]), int(b["y"]), int(b["health"])]
         else:
             text = "%s (%d,%d): deposit exhausted" % [str(def["name"]), int(b["x"]), int(b["y"])]
         var row := HBoxContainer.new()
@@ -172,6 +178,17 @@ func refresh() -> void:
             "depleted":
                 text2 = "exhausted"
                 color = Style.INK_SOFT
+            "damaged":
+                text2 = "damaged"
+                color = Style.BAD
+            "ready":
+                text2 = "ready"
+                color = Style.INK_SOFT
+            "firing":
+                text2 = "firing"
+            "no_ammo":
+                text2 = "no ammunition"
+                color = Style.WARN
             _:
                 text2 = "new"
                 color = Style.INK_SOFT

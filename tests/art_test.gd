@@ -69,6 +69,11 @@ func _init() -> void:
     print("Coverage")
     check(svg_names("buildings") == building_ids, "every building has a picture and there are no extras (%d)" % building_ids.size())
     check(svg_names("resources") == resource_ids, "every resource has an icon and there are no extras (%d)" % resource_ids.size())
+    var alien_ids: Array = []
+    for t in gd["crisis"].get("aliens", {}).get("types", []):
+        alien_ids.append(str(t["id"]))
+    alien_ids.sort()
+    check(svg_names("aliens") == alien_ids, "every kind of creature has a picture and there are no extras (%d)" % alien_ids.size())
     var deposit_files: Array = svg_names("deposits")
     var missing: Array = []
     for r in deposit_resources:
@@ -84,6 +89,11 @@ func _init() -> void:
     for id in resource_ids:
         if not well_formed("resources", id):
             bad.append("resources/" + id)
+    for id in alien_ids:
+        if not well_formed("aliens", id):
+            bad.append("aliens/" + id)
+        elif ArtLibrary.alien(id) == null:
+            bad.append("aliens/" + id + " (no texture)")
     for id in deposit_files:
         if not well_formed("deposits", id):
             bad.append("deposits/" + id)

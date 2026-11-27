@@ -107,8 +107,8 @@ static func run_day(state) -> void:
     for r in state.rules:
         var result: String = "paused" if bool(r["paused"]) else _execute(state, r)
         r["last_result"] = result
-        var bad: bool = ["no_money", "partial_money", "no_room", "partial_room", "price"].has(result)
-        var was_bad: bool = ["no_money", "partial_money", "no_room", "partial_room", "price"].has(str(r["notified"]))
+        var bad: bool = ["no_money", "partial_money", "no_room", "partial_room", "price", "partial_limit", "market_limit"].has(result)
+        var was_bad: bool = ["no_money", "partial_money", "no_room", "partial_room", "price", "partial_limit", "market_limit"].has(str(r["notified"]))
         if bad and str(r["notified"]) != result:
             state.rule_news.append({"kind": "problem", "id": r["id"], "resource": r["resource"], "rule": r["kind"], "result": result})
             r["notified"] = result
@@ -149,6 +149,10 @@ static func _execute(state, r: Dictionary) -> String:
         if extra <= 0:
             return "idle"
         n = mini(extra, cap)
+    var room: int = state.market.trade_room(res)
+    if room >= 0 and n > room:
+        n = room
+        result = "partial_limit" if n > 0 else "market_limit"
     if n > 0 and int(r["limit_cents"]) > 0:
         var selling: bool = str(r["kind"]) == "sell_above"
         var total: int = state.market.quote_sell(res, n) if selling else state.market.quote_buy(res, n)
@@ -193,6 +197,10 @@ static func result_text(result: String) -> String:
             return "bought nothing: not enough cash"
         "price":
             return "did nothing: the price was outside your limit"
+        "partial_limit":
+            return "traded only part: shipping limits"
+        "market_limit":
+            return "traded nothing: today's shipping limit is used up"
         "failed":
             return "could not trade"
     return ""

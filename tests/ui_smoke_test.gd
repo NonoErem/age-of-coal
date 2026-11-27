@@ -401,6 +401,52 @@ func _initialize() -> void:
     print("Company size")
     check("size x1.0" in _all_text(scene.companies_panel), "the Rivals tab shows each company's size")
 
+    print("The invasion")
+    s = scene.state
+    var Crisis = load("res://sim/crisis.gd")
+    scene.refresh_all()
+    check(scene.time_bar.date_label.text == Crisis.date_text(s, s.day) and scene.time_bar.threat_label.text == "", "the time bar shows the date, and no threat before the announcement")
+    check(scene.build_bar.buttons.has("mg_nest") and scene.build_bar.buttons.has("field_battery") and "munitions" in scene.build_bar.buttons["mg_nest"].tooltip_text.to_lower(), "the build bar has defenses, with their ammunition in the tooltip")
+    s.day = int(s.data["crisis"]["announce_day"]) - 1
+    Crisis.apply_market(s)
+    scene.running = true
+    scene.advance_one_day()
+    check(scene.telegram.visible and "SKY" in scene.telegram.title_label.text and not scene.running, "the announcement arrives as a telegram and pauses the game")
+    check("Landings expected in 60 days" in scene.time_bar.threat_label.text and scene.time_bar.phase_label.text == "WARNING", "the time bar counts down to the landing")
+    scene.handle_escape()
+    check(not scene.telegram.visible, "Esc puts the telegram away")
+    s.day = int(s.data["crisis"]["landing_day"]) - 1
+    Crisis.apply_market(s)
+    s.money_cents = 50000000
+    scene.set_tool("mg_nest")
+    scene.map_clicked(21, 12)
+    scene.clear_tool()
+    s.build("coke_oven", 20, 12)
+    scene.advance_one_day()
+    check(scene.telegram.visible and "LANDED" in scene.telegram.title_label.text and s.aliens.size() == 1, "the first landing is a telegram too")
+    scene.telegram.close()
+    check("1 creature on the map" in scene.time_bar.threat_label.text, "the time bar counts the creatures")
+    scene.market_panel.select_resource("coal")
+    scene.refresh_all()
+    check("Shipping:" in scene.market_panel.detail_event.text, "the Market tab shows the shipping limit")
+    var oven: Dictionary = s.building_at(20, 12)
+    oven["health"] = 60
+    oven["status"] = "damaged"
+    scene.select_tile(20, 12)
+    check("Damaged" in scene.inspector.detail_label.text and scene.inspector.bar.visible, "a damaged building shows its damage and a health bar")
+    var repair_button: Button = null
+    for ac in scene.inspector.actions.get_children():
+        if ac is Button and ac.text.begins_with("Repair"):
+            repair_button = ac
+    check(repair_button != null, "and a Repair button with the price")
+    repair_button.pressed.emit()
+    check(int(oven["health"]) == 120 and "Repaired Coke oven" in scene.event_log.text.get_parsed_text(), "repairing works from the inspector")
+    scene.select_tile(21, 12)
+    check("Reach 2 tiles" in scene.inspector.detail_label.text, "a defense shows its reach, damage and ammunition")
+    scene.map_view.cover_button.button_pressed = true
+    check(scene.map_view.show_cover, "the Cover button shows the defenses' reach")
+
+
     clean_test_dir()
 
     print("%s" % ("all ok" if failures == 0 else "%d failed" % failures))

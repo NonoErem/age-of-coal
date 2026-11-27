@@ -7,6 +7,7 @@ extends Control
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
 const Survey = preload("res://sim/survey.gd")
+const Crisis = preload("res://sim/crisis.gd")
 
 signal tile_clicked(x: int, y: int)
 signal cancel_requested()
@@ -23,6 +24,7 @@ var selected: Vector2i = Vector2i(-1, -1)
 var hover: Vector2i = Vector2i(-1, -1)
 var tool_id: String = ""
 var survey_level: int = 0                 # 0 = not surveying
+var show_cover: bool = false              # draw the reach of every defense
 var tile: int = 32
 var origin: Vector2 = Vector2.ZERO
 var manual_tile: int = 0                  # 0 = automatic zoom
@@ -33,6 +35,7 @@ var _pan_start: Vector2 = Vector2.ZERO
 var _panning: bool = false
 var _mini_drag: bool = false
 var _zoom_row: HBoxContainer
+var cover_button: Button
 
 
 func setup(p_state) -> void:
@@ -49,6 +52,18 @@ func setup(p_state) -> void:
 func _add_zoom_buttons() -> void:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 3)
+    var cover := Button.new()
+    cover.text = "Cover"
+    cover.toggle_mode = true
+    cover.focus_mode = Control.FOCUS_NONE
+    cover.tooltip_text = "Show the ground your defenses can reach (C)"
+    cover.custom_minimum_size = Vector2(52, 26)
+    cover.add_theme_font_size_override("font_size", 13)
+    cover.toggled.connect(func(on: bool) -> void:
+        show_cover = on
+        queue_redraw())
+    row.add_child(cover)
+    cover_button = cover
     for spec in [["+", "Zoom in (mouse wheel, or the + key)"], ["-", "Zoom out (mouse wheel, or the - key)"], ["Fit", "Back to the automatic zoom (0)"]]:
         var b := Button.new()
         b.text = str(spec[0])
@@ -293,6 +308,11 @@ func _get_tooltip(at_position: Vector2) -> String:
     var b: Dictionary = state.building_at(t.x, t.y)
     if not b.is_empty():
         lines.append(str(state.data["buildings"][b["type"]]["name"]))
+        if Crisis.is_damaged(state, b):
+            lines.append("Damaged: %d of %d health" % [int(b["health"]), Crisis.max_health(state, b)])
+    for a in state.aliens:
+        if int(a["x"]) == t.x and int(a["y"]) == t.y:
+            lines.append("%s: %d of %d health, hits for %d a day" % [str(Crisis.alien_def(state, str(a["type"])).get("name", a["type"])), int(a["hp"]), int(a["max_hp"]), int(a["attack"])])
     if lines.is_empty():
         return ""
     return "\n".join(lines)
@@ -332,9 +352,13 @@ func _draw() -> void:
         var d: Dictionary = state.data["map"]["deposits"][id]
         if screen.has_point(_tile_rect(int(d["x"]), int(d["y"])).get_center()):
             _draw_deposit(id, d)
+    _draw_cover()
     for b in state.buildings:
         if screen.has_point(_tile_rect(int(b["x"]), int(b["y"])).get_center()):
             _draw_building(b, font)
+    for a in state.aliens:
+        if screen.has_point(_tile_rect(int(a["x"]), int(a["y"])).get_center()):
+            _draw_alien(a)
 
     # How much is left in each deposit that has been used: a ring that shrinks.
     for id in state.revealed_deposit_ids():
@@ -384,6 +408,8 @@ func _draw_minimap() -> void:
         draw_rect(Rect2(r.position + Vector2(float(d["x"]), float(d["y"])) * k, Vector2(k, k)).grow(0.5), col)
     for b in state.buildings:
         draw_rect(Rect2(r.position + Vector2(float(b["x"]), float(b["y"])) * k, Vector2(k, k)).grow(1.0), Style.INK)
+    for a in state.aliens:
+        draw_rect(Rect2(r.position + Vector2(float(a["x"]), float(a["y"])) * k, Vector2(k, k)).grow(1.0), Style.BAD)
     var view_tiles_origin: Vector2 = (Vector2(LABEL, LABEL) - origin) / float(tile)
     var view_tiles: Vector2 = view_size() / float(tile)
     var vr := Rect2(r.position + view_tiles_origin * k, view_tiles * k)
@@ -463,6 +489,53 @@ func _draw_building(b: Dictionary, font: Font) -> void:
     var dot: Vector2 = r.position + Vector2(r.size.x - 3, 3)
     draw_circle(dot, 5.0, Style.INK)
     draw_circle(dot, 3.5, _status_color(str(b["status"])))
+    # The damage bar only appears once the building has been hit.
+    if Crisis.is_damaged(state, b):
+        var frac: float = clampf(float(b["health"]) / float(Crisis.max_health(state, b)), 0.0, 1.0)
+        _health_bar(Rect2(r.position + Vector2(2, r.size.y - 7), Vector2(r.size.x - 4, 5)), frac)
+
+
+func _health_bar(br: Rect2, frac: float) -> void:
+    draw_rect(br.grow(1), Style.INK)
+    draw_rect(br, Style.PAPER_DEEP)
+    var col: Color = Style.GOOD if frac > 0.66 else (Style.WARN if frac > 0.33 else Style.BAD)
+    draw_rect(Rect2(br.position, Vector2(br.size.x * frac, br.size.y)), col)
+
+
+func _draw_alien(a: Dictionary) -> void:
+    var r: Rect2 = _tile_rect(int(a["x"]), int(a["y"]))
+    var tex: Texture2D = ArtLibrary.alien(str(a["type"]))
+    if tex != null:
+        draw_texture_rect(tex, r.grow(-1), false)
+    else:
+        draw_circle(r.get_center(), tile * 0.35, Style.BAD)
+    _health_bar(Rect2(r.position + Vector2(2, 1), Vector2(r.size.x - 4, 4)), clampf(float(a["hp"]) / float(a["max_hp"]), 0.0, 1.0))
+
+
+## Reach of the defenses: every one when "Cover" is on, the selected one, and the one being placed.
+func _draw_cover() -> void:
+    var defs: Dictionary = state.data["buildings"]
+    var sel: Dictionary = state.building_at(selected.x, selected.y) if selected.x >= 0 else {}
+    for b in state.buildings:
+        var def: Dictionary = defs[b["type"]]
+        if str(def["kind"]) != "defense":
+            continue
+        if show_cover or (not sel.is_empty() and int(sel["uid"]) == int(b["uid"])):
+            _range_box(int(b["x"]), int(b["y"]), int(def["range"]), Color(Style.SELECT, 0.08), Color(Style.SELECT, 0.6))
+    if tool_id != "" and hover.x >= 0 and str(defs[tool_id]["kind"]) == "defense":
+        _range_box(hover.x, hover.y, int(defs[tool_id]["range"]), Color(Style.GOOD, 0.12), Style.GOOD)
+
+
+func _range_box(x: int, y: int, rr: int, fill: Color, line: Color) -> void:
+    var cells: Vector2i = map_size_tiles()
+    var x0: int = maxi(0, x - rr)
+    var y0: int = maxi(0, y - rr)
+    var x1: int = mini(cells.x - 1, x + rr)
+    var y1: int = mini(cells.y - 1, y + rr)
+    var tl: Rect2 = _tile_rect(x0, y0)
+    var box := Rect2(tl.position, Vector2((x1 - x0 + 1) * tile, (y1 - y0 + 1) * tile))
+    draw_rect(box, fill)
+    draw_rect(box, line, false, 2.0)
 
 
 func _draw_hover(font: Font) -> void:
@@ -501,4 +574,10 @@ static func _status_color(status: String) -> Color:
             return Style.SELECT
         "depleted":
             return Style.INK_SOFT
+        "damaged":
+            return Style.BAD
+        "firing":
+            return Style.GOOD
+        "no_ammo":
+            return Style.WARN
     return Style.PAPER_DEEP

@@ -1,4 +1,6 @@
 extends RefCounted
+
+const Crisis = preload("res://sim/crisis.gd")
 ## Contract board, delivery and failure. No reputation yet.
 ##
 ## Rules:
@@ -70,7 +72,7 @@ static func daily_update(state) -> void:
             kept.append(o)
     state.board = kept
 
-    if state.board.size() < int(cfg["board_size"]) and state.contract_rng.randf() < float(cfg["offer_chance_per_day"]):
+    if state.board.size() < int(cfg["board_size"]) and state.contract_rng.randf() < float(cfg["offer_chance_per_day"]) * Crisis.contract_mult(state):
         var offer: Dictionary = generate_offer(state)
         if not offer.is_empty():
             state.news.append({"kind": "offer", "client": offer["client"], "resource": offer["resource"], "quantity": offer["quantity"],

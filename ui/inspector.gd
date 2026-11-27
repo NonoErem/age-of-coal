@@ -5,8 +5,10 @@ const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
 const Survey = preload("res://sim/survey.gd")
 const Production = preload("res://sim/production.gd")
+const Crisis = preload("res://sim/crisis.gd")
 
 signal stop_toggled(uid: int)
+signal repair_requested(uid: int)
 signal demolish_confirmed(uid: int)
 
 var state
@@ -86,7 +88,26 @@ func refresh() -> void:
         title_label.text = "%s at (%d, %d)" % [str(def["name"]), x, y]
         var status: String = str(b["status"])
         var res_names: Callable = func(ids: Array) -> String: return Style.names_text(ids, res)
-        if def["kind"] == "storage":
+        var damaged: bool = Crisis.is_damaged(state, b)
+        if damaged and def["kind"] != "defense":
+            lines.append("Damaged: it does nothing until repaired (%d of %d health)." % [int(b["health"]), Crisis.max_health(state, b)])
+            detail_label.add_theme_color_override("font_color", Style.BAD)
+        if def["kind"] == "defense":
+            match status:
+                "firing":
+                    lines.append("Firing.")
+                "no_ammo":
+                    lines.append("Creatures in reach, but no %s to fire!" % Style.names_text(def.get("ammo", {}).keys(), res))
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "stopped":
+                    lines.append("Stopped by you. It does not fire.")
+                    detail_label.add_theme_color_override("font_color", Style.SELECT)
+                _:
+                    lines.append("Ready. Nothing in reach.")
+            lines.append("Reach %d tiles, %d damage a day, uses %s on each day it fires. Health %d of %d%s." % [int(def["range"]), int(def["damage"]), Style.items_text(def.get("ammo", {}), res), int(b["health"]), Crisis.max_health(state, b), " (keeps firing while damaged)" if damaged else ""])
+        elif damaged:
+            pass
+        elif def["kind"] == "storage":
             lines.append("Adds room for %d units. In store: %d of %d, yard and warehouses together." % [int(def["capacity"]), state.stored_units(), state.capacity()])
         elif def["kind"] == "factory":
             match status:
@@ -117,6 +138,13 @@ func refresh() -> void:
                     detail_label.add_theme_color_override("font_color", Style.SELECT)
                 _:
                     lines.append("Produces %s a day, times richness" % Style.items_text(def["outputs"], res))
+        if Crisis.announced(state) and def["kind"] != "defense":
+            var cover: int = Crisis.covered_by(state, x, y).size()
+            lines.append("Covered by %d defense%s." % [cover, "" if cover == 1 else "s"] if cover > 0 else "Not covered by any defense.")
+        if damaged:
+            bar.visible = true
+            bar.max_value = float(Crisis.max_health(state, b))
+            bar.value = float(b["health"])
         var idle: float = float(state.data["balance"]["idle_upkeep_factor"])
         var upkeep_now: int = Production.upkeep_of(def, status, idle)
         if upkeep_now != int(def["upkeep_per_day"]):
@@ -138,6 +166,14 @@ func refresh() -> void:
     else:
         title_label.text = "Free ground at (%d, %d)" % [x, y]
         lines.append("Room for a factory.")
+    for a in Crisis.aliens_near(state, x, y, 0):
+        var ad: Dictionary = Crisis.alien_def(state, str(a["type"]))
+        if b.is_empty() and dep_id == "":
+            title_label.text = "%s at (%d, %d)" % [str(ad.get("name", a["type"])), x, y]
+            icon.texture = ArtLibrary.alien(str(a["type"]))
+            lines.clear()
+        lines.append("%s: %d of %d health, hits a building next to it for %d a day, moves %d tile%s a day. %s" % [str(ad.get("name", a["type"])), int(a["hp"]), int(a["max_hp"]), int(a["attack"]), int(a["speed"]), "" if int(a["speed"]) == 1 else "s", str(ad.get("text", ""))])
+        detail_label.add_theme_color_override("font_color", Style.BAD)
 
     if tool_id != "" and b.is_empty():
         var def2: Dictionary = state.data["buildings"][tool_id]
@@ -173,6 +209,14 @@ func _build_actions(b: Dictionary, def: Dictionary) -> void:
     var uid: int = int(b["uid"])
     if confirming_uid != uid:
         confirming_uid = -1
+    var fix: int = state.repair_cost(uid)
+    if fix > 0:
+        var rb := Button.new()
+        rb.text = "Repair %s" % Style.money0(fix)
+        rb.tooltip_text = "Bring it back to full health. Costs %d%% of its build price for full damage, less for a little." % int(round(float(state.data["crisis"].get("damage", {}).get("repair_rate", 0.5)) * 100.0))
+        rb.disabled = fix > state.money_cents
+        rb.pressed.connect(func() -> void: repair_requested.emit(uid))
+        actions.add_child(rb)
     if def["kind"] != "storage":
         var stopped: bool = bool(b.get("stopped", false))
         var stop_button := Button.new()
@@ -245,4 +289,5 @@ static func reason_text(reason: String) -> String:
         "storage_full": return "there is no room in storage."
         "storage_in_use": return "your stock would no longer fit without it."
         "insufficient_funds": return "not enough cash."
+        "alien_here": return "a creature is standing there."
     return reason

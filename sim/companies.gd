@@ -37,6 +37,9 @@ extends RefCounted
 ## Their random choices use their own stream, so they never disturb market prices or contract offers.
 
 
+const Crisis = preload("res://sim/crisis.gd")
+
+
 static func enabled(state) -> bool:
     return bool(state.data.get("companies", {}).get("enabled", false)) and not state.data["companies"]["list"].is_empty()
 
@@ -70,8 +73,10 @@ static func run_day(state) -> void:
         var def: Dictionary = list[id]
         var r: Dictionary = state.rivals[id]
         if str(r["status"]) == "bankrupt":
-            r["bankrupt_days"] = int(r["bankrupt_days"]) - 1
             r["profit"] = 0
+            if not Crisis.rivals_revive(state):
+                continue  # nobody invests during the invasion
+            r["bankrupt_days"] = int(r["bankrupt_days"]) - 1
             if int(r["bankrupt_days"]) <= 0:
                 _restart(state, id, false)
                 state.rival_news.append({"kind": "revived", "company": id})
@@ -81,7 +86,7 @@ static func run_day(state) -> void:
         # An idle company keeps only a skeleton crew, like your own paused factories.
         var overhead_full: int = int(round(float(def["overhead"]) * scale))
         var overhead: int = overhead_full if margin > 0 else int(round(float(overhead_full) * float(c["idle_overhead"])))
-        var profit: int = margin - overhead
+        var profit: int = margin - overhead - Crisis.rival_burden(state, int(def["overhead"]), scale)
         r["profit"] = profit
         r["cash"] = int(r["cash"]) + profit
         var kept: int = maxi(0, profit)
@@ -101,7 +106,7 @@ static func run_day(state) -> void:
         elif float(r["cash"]) >= comfort and profit > 0:
             s += float(c["grow"])
             # Healthy and profitable: put part of what it keeps back into the business and grow.
-            if str(r["status"]) == "healthy" and s >= 0.999:
+            if str(r["status"]) == "healthy" and s >= 0.999 and not Crisis.landed(state):
                 var spend: int = int(floor(float(kept) * float(c["growth_reinvest"])))
                 var room: float = maxf(0.0, 1.0 - scale / float(c["growth_max_scale"]))
                 r["cash"] = int(r["cash"]) - spend
@@ -130,8 +135,8 @@ static func variable_margin(state, id: String) -> int:
     var r: Dictionary = state.rivals[id]
     var bal: Dictionary = state.data["balance"]
     var fr: float = float(c["friction"])
-    var sell_f: float = (1.0 - float(bal["spread"]) * fr) * (1.0 - float(bal["fee"]) * fr)
-    var buy_f: float = (1.0 + float(bal["spread"]) * fr) * (1.0 + float(bal["fee"]) * fr)
+    var sell_f: float = (1.0 - state.market.spread() * fr) * (1.0 - state.market.fee() * fr)
+    var buy_f: float = (1.0 + state.market.spread() * fr) * (1.0 + state.market.fee() * fr)
     var revenue: float = 0.0
     var cost: float = 0.0
     for res in def["outputs"]:

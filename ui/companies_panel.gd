@@ -1,6 +1,7 @@
 extends ScrollContainer
 ## The rival companies: who they are, how they are doing, what they do to the market, and a way to buy them.
 
+const Crisis = preload("res://sim/crisis.gd")
 const Style = preload("res://ui/style.gd")
 const Companies = preload("res://sim/companies.gd")
 
@@ -146,7 +147,10 @@ func _card(id: String) -> PanelContainer:
 
     v.add_child(_label("Makes %s a day. Uses %s." % [_items(def["outputs"]), _items(def["inputs"]) if not def["inputs"].is_empty() else "nothing it has to buy"], 12))
     if status == "bankrupt":
-        v.add_child(_label("Out of business. Investors restart it in about %d days. %s." % [int(r["bankrupt_days"]), _sentence(Companies.effect_text(state, id))], 12, Style.BAD))
+        if Crisis.rivals_revive(state):
+            v.add_child(_label("Out of business. Investors restart it in about %d days. %s." % [int(r["bankrupt_days"]), _sentence(Companies.effect_text(state, id))], 12, Style.BAD))
+        else:
+            v.add_child(_label("Out of business. Nobody invests during the invasion: it stays closed unless you buy it. %s." % _sentence(Companies.effect_text(state, id)), 12, Style.BAD))
     else:
         var money_line: String = "Cash %s. Yesterday %s." % [Style.money0(int(r["cash"])), ("a profit of %s" % Style.money0(int(r["profit"]))) if int(r["profit"]) >= 0 else ("a loss of %s" % Style.money0(-int(r["profit"])))]
         v.add_child(_label(money_line, 12, Style.BAD if int(r["cash"]) < 0 else Style.INK_SOFT))

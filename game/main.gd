@@ -26,6 +26,9 @@ const CompaniesPanel = preload("res://ui/companies_panel.gd")
 const Companies = preload("res://sim/companies.gd")
 const Survey = preload("res://sim/survey.gd")
 const Rules = preload("res://sim/rules.gd")
+const Crisis = preload("res://sim/crisis.gd")
+const TimeBar = preload("res://ui/time_bar.gd")
+const Telegram = preload("res://ui/telegram.gd")
 
 const SPEEDS := [1, 2, 4]
 
@@ -42,6 +45,8 @@ var menu
 var settings
 
 var top_bar
+var time_bar
+var telegram
 var map_view
 var inspector
 var build_bar
@@ -105,6 +110,9 @@ func _build_ui() -> void:
     top_bar.next_day_pressed.connect(advance_one_day)
     top_bar.menu_requested.connect(open_menu)
     root.add_child(top_bar)
+    time_bar = TimeBar.new()
+    time_bar.setup(state)
+    root.add_child(time_bar)
 
     var middle := HBoxContainer.new()
     middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -129,6 +137,7 @@ func _build_ui() -> void:
     inspector.setup(state)
     inspector.stop_toggled.connect(toggle_building_stopped)
     inspector.demolish_confirmed.connect(demolish_building)
+    inspector.repair_requested.connect(repair_building)
     left.add_child(inspector)
     build_bar = BuildBar.new()
     build_bar.setup(state)
@@ -191,6 +200,10 @@ func _build_ui() -> void:
     menu.display_changed.connect(change_display)
     menu.quit_requested.connect(func() -> void: get_tree().quit())
     add_child(menu)
+    telegram = Telegram.new()
+    telegram.setup()
+    telegram.closed.connect(refresh_all)
+    add_child(telegram)
 
 
 func _notification(what: int) -> void:
@@ -230,7 +243,9 @@ func close_menu() -> void:
 
 
 func handle_escape() -> void:
-    if menu.visible:
+    if telegram.visible:
+        telegram.close()
+    elif menu.visible:
         close_menu()
     elif tool_id != "" or survey_level > 0:
         clear_tool()
@@ -398,6 +413,19 @@ func demolish_building(uid: int) -> void:
     refresh_all()
 
 
+func repair_building(uid: int) -> void:
+    var b: Dictionary = state.building_by_uid(uid)
+    if b.is_empty():
+        return
+    var name_text: String = str(state.data["buildings"][b["type"]]["name"])
+    var r: Dictionary = state.repair(uid)
+    if r["ok"]:
+        log_message("Repaired %s at (%d, %d) for %s." % [name_text, int(b["x"]), int(b["y"]), Style.money(int(r["cost"]))], "good")
+    else:
+        log_message("Cannot repair %s: %s" % [name_text, Crisis.reason_text(str(r["reason"]))], "warn")
+    refresh_all()
+
+
 func toggle_pause() -> void:
     running = not running
     refresh_all()
@@ -433,7 +461,7 @@ func accept_offer_for_test() -> void:
 # ---------- the clock ----------
 
 func _process(delta: float) -> void:
-    if not running or menu.visible:
+    if not running or menu.visible or telegram.visible:
         return
     acc += delta * speed
     var day_len: float = float(state.data["balance"]["day_seconds"])
@@ -464,7 +492,7 @@ func _unhandled_input(event: InputEvent) -> void:
         if event.keycode == KEY_ESCAPE:
             handle_escape()
             return
-        if menu.visible:
+        if menu.visible or telegram.visible:
             return
         match event.keycode:
             KEY_SPACE:
@@ -479,6 +507,8 @@ func _unhandled_input(event: InputEvent) -> void:
                 advance_one_day()
             KEY_P:
                 toggle_selected_building()
+            KEY_C:
+                map_view.cover_button.button_pressed = not map_view.cover_button.button_pressed
             KEY_EQUAL, KEY_PLUS, KEY_KP_ADD:
                 map_view.zoom_by(1.25, map_view.size / 2.0)
             KEY_MINUS, KEY_KP_SUBTRACT:
@@ -496,6 +526,7 @@ func _log_day() -> void:
     _log_orders()
     _log_rules()
     _log_rivals()
+    _log_crisis()
     for e in state.events:
         var name_text: String = str(defs[e["type"]]["name"])
         match str(e["kind"]):
@@ -556,6 +587,60 @@ func _log_rivals() -> void:
                 log_message("%s took the offer from %s for %d %s." % [name_text, str(clients[n["client"]]["name"]), int(n["quantity"]), str(res[n["resource"]]["name"]).to_lower()], "info")
 
 
+## The invasion: telegrams for the big moments (they pause the game), log lines for the rest.
+func _log_crisis() -> void:
+    var defs: Dictionary = state.data["buildings"]
+    var kills: Dictionary = {}
+    var left: int = 0
+    for n in state.alien_news:
+        match str(n["kind"]):
+            "announced":
+                var body: String = "Objects have been seen falling from the sky across three continents. Observatories report more on the way. Landings are expected in about %d days, around %s.\n\nMarkets are in panic: prices swing and dealers widen their margins. When the landings begin, trade will get harder every month. Prepare: munitions, defenses, and goods you can make yourself." % [int(n["landing_day"]) - state.day, Crisis.date_text(state, int(n["landing_day"]))]
+                _telegram("STRANGE OBJECTS FALL FROM THE SKY", body)
+                log_message("Telegram: objects falling from the sky. Landings expected around %s (day %d). Markets in panic." % [Crisis.date_text(state, int(n["landing_day"])), int(n["landing_day"])], "bad")
+            "phase":
+                var ph: Dictionary = Crisis.phase(state)
+                if str(n["phase"]) != "warning" and str(n["phase"]) != "invasion":
+                    log_message("%s: %s" % [str(ph.get("name", "")), str(ph.get("text", ""))], "bad")
+            "sighting":
+                var names: Array = []
+                for t in n["types"]:
+                    var nm: String = str(Crisis.alien_def(state, str(t)).get("name", t)).to_lower()
+                    if not names.has(nm):
+                        names.append(nm)
+                if bool(n["first"]):
+                    _telegram("THEY HAVE LANDED", "A creature has come out of the wreck at (%d, %d), at the edge of your land. It is heading for the nearest buildings.\n\nA damaged building stops working until you repair it, and one that loses all its health is destroyed. Machine-gun nests and field batteries (bottom left) fire at whatever comes in reach, as long as you keep them in munitions. From now on, the world market gives you less every month: shipping is limited, spreads widen, and rival companies start to fail." % [int(n["x"]), int(n["y"])])
+                    log_message("A %s has landed at (%d, %d)." % [", ".join(names), int(n["x"]), int(n["y"])], "bad")
+                else:
+                    log_message("%d creature%s sighted at the edge of the map: %s." % [int(n["count"]), "" if int(n["count"]) == 1 else "s", ", ".join(names)], "warn")
+            "attacked":
+                var kind: String = str(defs[n["type"]]["kind"])
+                log_message("A %s is attacking your %s at (%d, %d)%s" % [str(Crisis.alien_def(state, str(n["alien"])).get("name", n["alien"])).to_lower(), str(defs[n["type"]]["name"]), int(n["x"]), int(n["y"]), ". It keeps firing." if kind == "defense" else "! It stops working until repaired."], "bad")
+            "destroyed":
+                var lost: String = ""
+                if not n["lost"].is_empty():
+                    lost = " Goods lost with it: %s." % Style.items_text(n["lost"], state.data["resources"])
+                log_message("Your %s at (%d, %d) has been destroyed by a %s.%s" % [str(defs[n["type"]]["name"]), int(n["x"]), int(n["y"]), str(Crisis.alien_def(state, str(n["alien"])).get("name", n["alien"])).to_lower(), lost], "bad")
+            "killed":
+                kills[str(n["alien"])] = int(kills.get(str(n["alien"]), 0)) + 1
+            "no_ammo":
+                log_message("Your %s at (%d, %d) has creatures in reach but no munitions!" % [str(defs[n["type"]]["name"]), int(n["x"]), int(n["y"])], "warn")
+            "left":
+                left += 1
+    if not kills.is_empty():
+        var parts: Array = []
+        for t in kills:
+            parts.append("%d %s" % [int(kills[t]), str(Crisis.alien_def(state, t).get("name", t)).to_lower() + ("s" if int(kills[t]) > 1 else "")])
+        log_message("Your defenses killed %s." % ", ".join(parts), "good")
+    if left > 0:
+        log_message("%d creature%s wandered off the map." % [left, "" if left == 1 else "s"], "info")
+
+
+func _telegram(title: String, body: String) -> void:
+    running = false
+    telegram.show_telegram(title, body)
+
+
 func _log_rules() -> void:
     var res: Dictionary = state.data["resources"]
     for n in state.rule_news:
@@ -611,6 +696,7 @@ func refresh_all() -> void:
     production_panel.refresh()
     contracts_panel.refresh()
     automation_panel.refresh()
+    time_bar.refresh()
     companies_panel.refresh()
     news_panel.refresh()
     inspector.refresh()
