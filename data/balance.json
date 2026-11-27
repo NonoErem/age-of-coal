@@ -27,5 +27,10 @@
   },
   "autosave_every_days": 10,
   "base_storage": 250,
-  "demolish_refund": 0.3
+  "demolish_refund": 0.3,
+  "rules": {
+    "max_rules": 12,
+    "max_level": 5000,
+    "max_per_day": 500
+  }
 }

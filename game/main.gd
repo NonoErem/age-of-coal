@@ -15,6 +15,7 @@ const EventLog = preload("res://ui/event_log.gd")
 const GameMenu = preload("res://ui/game_menu.gd")
 const NewsPanel = preload("res://ui/news_panel.gd")
 const OrdersPanel = preload("res://ui/orders_panel.gd")
+const AutomationPanel = preload("res://ui/automation_panel.gd")
 const DisplaySettings = preload("res://game/settings.gd")
 const SaveManager = preload("res://game/save_manager.gd")
 const MarketEvents = preload("res://sim/market_events.gd")
@@ -23,6 +24,8 @@ const ProductionPanel = preload("res://ui/production_panel.gd")
 const ContractsPanel = preload("res://ui/contracts_panel.gd")
 const CompaniesPanel = preload("res://ui/companies_panel.gd")
 const Companies = preload("res://sim/companies.gd")
+const Survey = preload("res://sim/survey.gd")
+const Rules = preload("res://sim/rules.gd")
 
 const SPEEDS := [1, 2, 4]
 
@@ -31,6 +34,7 @@ var running: bool = false
 var speed: int = 1
 var acc: float = 0.0
 var tool_id: String = ""
+var survey_level: int = 0
 var was_negative: bool = false
 var storage_warned: bool = false
 var save_dir: String = SaveManager.DEFAULT_DIR
@@ -48,6 +52,8 @@ var production_panel
 var contracts_panel
 var news_panel
 var orders_panel
+var automation_panel
+var rules_panel
 var companies_panel
 
 
@@ -127,6 +133,7 @@ func _build_ui() -> void:
     build_bar = BuildBar.new()
     build_bar.setup(state)
     build_bar.tool_selected.connect(set_tool)
+    build_bar.survey_selected.connect(set_survey)
     left.add_child(build_bar)
 
     # Right: tabs.
@@ -150,12 +157,14 @@ func _build_ui() -> void:
     contracts_panel.changed.connect(refresh_all)
     contracts_panel.message.connect(log_message)
     tabs.add_child(contracts_panel)
-    orders_panel = OrdersPanel.new()
-    orders_panel.name = "Orders"
-    orders_panel.setup(state)
-    orders_panel.changed.connect(refresh_all)
-    orders_panel.message.connect(log_message)
-    tabs.add_child(orders_panel)
+    automation_panel = AutomationPanel.new()
+    automation_panel.name = "Orders"
+    automation_panel.setup(state)
+    automation_panel.changed.connect(refresh_all)
+    automation_panel.message.connect(log_message)
+    tabs.add_child(automation_panel)
+    orders_panel = automation_panel.orders_panel
+    rules_panel = automation_panel.rules_panel
     companies_panel = CompaniesPanel.new()
     companies_panel.name = "Rivals"
     companies_panel.setup(state)
@@ -223,7 +232,7 @@ func close_menu() -> void:
 func handle_escape() -> void:
     if menu.visible:
         close_menu()
-    elif tool_id != "":
+    elif tool_id != "" or survey_level > 0:
         clear_tool()
     else:
         open_menu()
@@ -260,6 +269,7 @@ func _replace_state(new_state) -> void:
         remove_child(c)
         c.queue_free()
     tool_id = ""
+    survey_level = 0
     running = false
     acc = 0.0
     was_negative = state.money_cents < 0
@@ -276,9 +286,31 @@ func log_message(text: String, kind: String = "info") -> void:
 
 func set_tool(id: String) -> void:
     tool_id = id
+    survey_level = 0
     map_view.tool_id = id
+    map_view.survey_level = 0
     inspector.tool_id = id
-    build_bar.select_tool(id)
+    inspector.survey_level = 0
+    if id != "":
+        build_bar.select_tool(id)
+    else:
+        build_bar.clear_tool()
+    map_view.queue_redraw()
+    inspector.refresh()
+
+
+## Surveying is a tool too: pick it, then click the map. level 0 puts it away.
+func set_survey(level: int) -> void:
+    tool_id = ""
+    survey_level = level
+    map_view.tool_id = ""
+    map_view.survey_level = level
+    inspector.tool_id = ""
+    inspector.survey_level = level
+    if level > 0:
+        build_bar.select_survey(level)
+    else:
+        build_bar.clear_tool()
     map_view.queue_redraw()
     inspector.refresh()
 
@@ -287,8 +319,29 @@ func clear_tool() -> void:
     set_tool("")
 
 
+func _survey_clicked(x: int, y: int) -> void:
+    var res: Dictionary = state.data["resources"]
+    var name_text: String = Survey.level_name(state, survey_level)
+    var r: Dictionary = state.survey(x, y, survey_level)
+    if not r["ok"]:
+        if r["reason"] == "insufficient_funds":
+            log_message("Cannot afford a %s: it costs %s." % [name_text.to_lower(), Style.money(int(r["cost"]))], "warn")
+        else:
+            log_message("No %s there: %s" % [name_text.to_lower(), Survey.reason_text(str(r["reason"]))], "warn")
+        return
+    if r["found"].is_empty():
+        log_message("%s around (%d, %d) for %s: nothing new found." % [name_text, x, y, Style.money(int(r["cost"]))], "info")
+        return
+    log_message("%s around (%d, %d) for %s: %d deposit%s found." % [name_text, x, y, Style.money(int(r["cost"])), r["found"].size(), "" if r["found"].size() == 1 else "s"], "good")
+    for id in r["found"]:
+        var d: Dictionary = state.data["map"]["deposits"][id]
+        log_message("Found a %s deposit at (%d, %d): richness x%.1f, %s units, land %s." % [str(res[d["resource"]]["name"]).to_lower(), int(d["x"]), int(d["y"]), float(d["richness"]), Style.num(int(d["amount"])), Style.money0(int(d["land_cost"]))], "good")
+
+
 func map_clicked(x: int, y: int) -> void:
-    if tool_id != "":
+    if survey_level > 0:
+        _survey_clicked(x, y)
+    elif tool_id != "":
         var r: Dictionary = state.build(tool_id, x, y)
         var name_text: String = str(state.data["buildings"][tool_id]["name"])
         if r["ok"]:
@@ -441,6 +494,7 @@ func _log_day() -> void:
     var clients: Dictionary = state.data["contracts"]["clients"]
     _log_market_events()
     _log_orders()
+    _log_rules()
     _log_rivals()
     for e in state.events:
         var name_text: String = str(defs[e["type"]]["name"])
@@ -502,6 +556,18 @@ func _log_rivals() -> void:
                 log_message("%s took the offer from %s for %d %s." % [name_text, str(clients[n["client"]]["name"]), int(n["quantity"]), str(res[n["resource"]]["name"]).to_lower()], "info")
 
 
+func _log_rules() -> void:
+    var res: Dictionary = state.data["resources"]
+    for n in state.rule_news:
+        var item: String = str(res[n["resource"]]["name"]).to_lower()
+        var what: String = "keep %s in stock" % item if str(n["rule"]) == "keep" else "sell %s over the limit" % item
+        match str(n["kind"]):
+            "problem":
+                log_message("Your rule to %s: %s." % [what, Rules.result_text(str(n["result"]))], "warn")
+            "recovered":
+                log_message("Your rule to %s is working normally again." % what, "good")
+
+
 func _log_orders() -> void:
     var res: Dictionary = state.data["resources"]
     for n in state.order_news:
@@ -544,7 +610,7 @@ func refresh_all() -> void:
     market_panel.refresh()
     production_panel.refresh()
     contracts_panel.refresh()
-    orders_panel.refresh()
+    automation_panel.refresh()
     companies_panel.refresh()
     news_panel.refresh()
     inspector.refresh()

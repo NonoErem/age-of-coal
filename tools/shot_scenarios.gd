@@ -22,6 +22,28 @@ func run(scene: Control, name: String) -> void:
             var p2: Vector2i = _find(s, "coal", 1.0)
             scene.map_view.hover = p2
             scene.select_tile(p2.x, p2.y)
+        "storage":
+            s.money_cents = 6000000
+            var sc: Vector2i = _find(s, "coal", 1.0)
+            var si: Vector2i = _find(s, "iron_ore", 1.0)
+            scene.set_tool("coal_mine")
+            scene.map_clicked(sc.x, sc.y)
+            scene.set_tool("iron_mine")
+            scene.map_clicked(si.x, si.y)
+            scene.set_tool("coke_oven")
+            scene.map_clicked(9, 7)
+            scene.set_tool("warehouse")
+            scene.map_clicked(12, 8)
+            scene.clear_tool()
+            s.demolish(int(s.buildings[3]["uid"]))  # no warehouse yet: the yard is the only storage
+            s.inventory = {"coal": 110, "iron_ore": 60, "steel": 70}
+            s.set_building_stopped(int(s.buildings[1]["uid"]), true)
+            for d in 4:
+                s.advance_day()
+                scene._log_day()
+            scene.select_tile(sc.x, sc.y)
+            scene.tabs.current_tab = 1
+            scene.refresh_all()
         "bottleneck":
             s.money_cents = 6000000
             var c1: Vector2i = _find(s, "coal", 1.0)
@@ -39,7 +61,34 @@ func run(scene: Control, name: String) -> void:
             scene.select_tile(11, 7)
             scene.tabs.current_tab = 1
             scene.refresh_all()
-        "play", "production", "contracts", "menu", "news", "newsmarket":
+        "survey":
+            s.money_cents = 3000000
+            s.data["events"]["chance_per_day"] = 0.0
+            scene.set_survey(1)
+            scene.map_clicked(22, 12)
+            scene.set_survey(2)
+            scene.map_clicked(22, 14)
+            scene.map_clicked(24, 18)
+            scene.set_survey(2)
+            scene.map_view.hover = Vector2i(14, 5)
+            scene.select_tile(22, 13)
+            scene.refresh_all()
+            scene.map_view.queue_redraw()
+        "rules":
+            s.money_cents = 3000000
+            s.data["events"]["chance_per_day"] = 0.0
+            s.add_rule("coal", "keep", 100)
+            s.add_rule("steel", "sell_above", 20, 9000)
+            s.add_rule("iron_ore", "keep", 40, 1200, 15, 500000)
+            for d in 8:
+                s.advance_day()
+                scene._log_day()
+            scene.tabs.current_tab = 3
+            scene.automation_panel.show_rules()
+            scene.rules_panel.kind_pick.select(1)
+            scene.rules_panel.res_pick.select(scene.rules_panel.resource_ids.find("copper_ore"))
+            scene.refresh_all()
+        "play", "production", "contracts", "menu", "news", "newsmarket", "orders", "companies", "rivalmarket":
             s.money_cents = 6000000
             var coal: Vector2i = _find(s, "coal", 1.0)
             var iron: Vector2i = _find(s, "iron_ore", 1.0)
@@ -76,6 +125,18 @@ func run(scene: Control, name: String) -> void:
                 scene.tabs.current_tab = 1
             if name == "contracts":
                 scene.tabs.current_tab = 2
+            if name == "orders":
+                s.data["events"]["chance_per_day"] = 0.0
+                s.start_standing_order("coal", "sell", 20, 30)
+                s.start_standing_order("iron_ore", "buy", 10, 12, 1500)
+                s.start_standing_order("steel", "sell", 15, 20, 9500)
+                for d in 5:
+                    s.advance_day()
+                    scene._log_day()
+                scene.tabs.current_tab = 3
+                scene.orders_panel.side_pick.select(0)
+                scene.orders_panel.res_pick.select(scene.orders_panel.resource_ids.find("coal"))
+                scene.refresh_all()
             if name == "news" or name == "newsmarket":
                 var ME = load("res://sim/market_events.gd")
                 s.data["events"]["chance_per_day"] = 0.0
@@ -86,7 +147,21 @@ func run(scene: Control, name: String) -> void:
                 ME.announce(s, "shipbuilding")
                 scene._log_day()
                 scene.market_panel.select_resource("coal")
-                scene.tabs.current_tab = 3 if name == "news" else 0
+                scene.tabs.current_tab = 5 if name == "news" else 0
+                scene.refresh_all()
+            if name == "companies" or name == "rivalmarket":
+                s.data["events"]["chance_per_day"] = 0.0
+                s.money_cents = 6000000
+                s.rivals["northern"]["cash"] = -1000000000
+                s.rivals["albion"]["strength"] = 0.62
+                s.rivals["albion"]["status"] = "weakened"
+                s.rivals["albion"]["cash"] = 60000
+                s.buy_company("midland")
+                for d in 12:
+                    s.advance_day()
+                    scene._log_day()
+                scene.tabs.current_tab = 4 if name == "companies" else 0
+                scene.market_panel.select_resource("rails")
                 scene.refresh_all()
             if name == "menu":
                 var SaveManager = load("res://game/save_manager.gd")

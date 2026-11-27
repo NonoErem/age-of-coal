@@ -6,6 +6,7 @@ extends Control
 
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
+const Survey = preload("res://sim/survey.gd")
 
 signal tile_clicked(x: int, y: int)
 signal cancel_requested()
@@ -21,6 +22,7 @@ var state
 var selected: Vector2i = Vector2i(-1, -1)
 var hover: Vector2i = Vector2i(-1, -1)
 var tool_id: String = ""
+var survey_level: int = 0                 # 0 = not surveying
 var tile: int = 32
 var origin: Vector2 = Vector2.ZERO
 var manual_tile: int = 0                  # 0 = automatic zoom
@@ -286,6 +288,8 @@ func _get_tooltip(at_position: Vector2) -> String:
         var info: Dictionary = state.data["map"]["deposits"][dep_id]
         lines.append("%s deposit, richness x%.1f" % [str(state.data["resources"][info["resource"]]["name"]), float(info["richness"])])
         lines.append("%s of %s left" % [Style.num(int(state.deposits[dep_id]["remaining"])), Style.num(int(info["amount"]))])
+        if int(info.get("depth", 0)) > 0:
+            lines.append("Deep deposit, found by a level %d survey" % int(info["depth"]))
     var b: Dictionary = state.building_at(t.x, t.y)
     if not b.is_empty():
         lines.append(str(state.data["buildings"][b["type"]]["name"]))
@@ -310,6 +314,8 @@ func _draw() -> void:
     for y in range(vis.position.y, vis.end.y + 1):
         draw_line(origin + Vector2(0, y * tile), origin + Vector2(cells.x * tile, y * tile), Color(Style.PAPER_DEEP, 0.65), 1.0)
 
+    _draw_surveyed(vis)
+
     # Legal tiles for the chosen building.
     if tool_id != "":
         var strong: bool = state.data["buildings"][tool_id]["kind"] == "extractor"
@@ -322,7 +328,7 @@ func _draw() -> void:
                         draw_rect(tr, Color(Style.GOOD, 0.9), false, 2.0)
 
     var screen := Rect2(Vector2.ZERO, size).grow(float(tile))
-    for id in state.data["map"]["deposits"]:
+    for id in state.revealed_deposit_ids():
         var d: Dictionary = state.data["map"]["deposits"][id]
         if screen.has_point(_tile_rect(int(d["x"]), int(d["y"])).get_center()):
             _draw_deposit(id, d)
@@ -331,7 +337,7 @@ func _draw() -> void:
             _draw_building(b, font)
 
     # How much is left in each deposit that has been used: a ring that shrinks.
-    for id in state.data["map"]["deposits"]:
+    for id in state.revealed_deposit_ids():
         var d2: Dictionary = state.data["map"]["deposits"][id]
         var frac: float = float(state.deposits[id]["remaining"]) / float(d2["amount"])
         if frac < 0.999 and frac > 0.0:
@@ -370,7 +376,7 @@ func _draw_minimap() -> void:
     draw_rect(r.grow(3), Color(Style.PAPER, 0.94))
     draw_rect(r.grow(3), Style.INK, false, 1.5)
     draw_rect(r, Style.PAPER_LIGHT)
-    for id in state.data["map"]["deposits"]:
+    for id in state.revealed_deposit_ids():
         var d: Dictionary = state.data["map"]["deposits"][id]
         var col: Color = Color.html(str(state.data["resources"][d["resource"]]["color"]))
         if int(state.deposits[id]["remaining"]) <= 0:
@@ -401,6 +407,17 @@ func _draw_ground(vis: Rect2i) -> void:
                 draw_line(r.position + Vector2(ox + len * 0.5, oy + len * 1.3), r.position + Vector2(ox + len * 1.5, oy + len * 0.3), col, 1.0)
 
 
+## Ground that has been surveyed is tinted blue: a little for a shallow survey, more for a deep one.
+func _draw_surveyed(vis: Rect2i) -> void:
+    if state.survey_tiles.is_empty():
+        return
+    for y in range(vis.position.y, vis.end.y):
+        for x in range(vis.position.x, vis.end.x):
+            var lv: int = int(state.survey_tiles.get(state.tile_key(x, y), 0))
+            if lv > 0:
+                draw_rect(_tile_rect(x, y), Color(Style.SELECT, 0.07 if lv == 1 else 0.14))
+
+
 func _draw_deposit(id: String, d: Dictionary) -> void:
     # A mine standing on the deposit hides it: the mine picture and the remaining-ore ring say it all.
     if not state.building_at(int(d["x"]), int(d["y"])).is_empty():
@@ -421,6 +438,12 @@ func _draw_deposit(id: String, d: Dictionary) -> void:
         var c: Vector2 = r.get_center()
         draw_circle(c, tile * (0.16 + 0.11 * float(d["richness"])), col)
         draw_arc(c, tile * (0.16 + 0.11 * float(d["richness"])), 0.0, TAU, 24, Style.INK, 1.5, true)
+    # Deep deposits carry a small tag with the survey level that found them.
+    if int(d.get("depth", 0)) > 0 and tile >= 18:
+        var font: Font = get_theme_default_font()
+        var tag := Rect2(r.position + Vector2(r.size.x * 0.52, r.size.y * 0.68), Vector2(r.size.x * 0.46, r.size.y * 0.3))
+        draw_rect(tag, Style.INK)
+        draw_string(font, tag.position + Vector2(0, tag.size.y * 0.78), "D%d" % int(d["depth"]), HORIZONTAL_ALIGNMENT_CENTER, tag.size.x, maxi(8, int(tile * 0.24)), Style.PAPER_LIGHT)
 
 
 func _draw_building(b: Dictionary, font: Font) -> void:
@@ -444,6 +467,16 @@ func _draw_building(b: Dictionary, font: Font) -> void:
 
 func _draw_hover(font: Font) -> void:
     var hr: Rect2 = _tile_rect(hover.x, hover.y)
+    if survey_level > 0:
+        var a: Rect2i = Survey.area(state, hover.x, hover.y)
+        var top_left: Rect2 = _tile_rect(a.position.x, a.position.y)
+        var area_rect := Rect2(top_left.position, Vector2(a.size.x * tile, a.size.y * tile))
+        var useful: bool = Survey.check(state, hover.x, hover.y, survey_level) == ""
+        var tint: Color = Style.SELECT if useful else Style.BAD
+        draw_rect(area_rect, Color(tint, 0.14))
+        draw_rect(area_rect, tint, false, 3.0)
+        draw_rect(hr, tint, false, 2.0)
+        return
     if tool_id == "":
         draw_rect(hr, Style.INK_SOFT, false, 1.5)
         return

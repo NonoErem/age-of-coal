@@ -130,6 +130,9 @@ func _card(id: String) -> PanelContainer:
     head.add_child(title)
     var badge: Label = _inline(Companies.status_text(status).to_upper(), 11, status_color(status))
     head.add_child(badge)
+    var size_label: Label = _inline("size x%.1f" % float(r["scale"]), 11, Style.INK_SOFT)
+    size_label.tooltip_text = "Size: 1.0 is the company as it started. A healthy, profitable company reinvests and grows, which raises its price and its pull on the market. Debt shrinks it."
+    head.add_child(size_label)
     v.add_child(head)
     v.add_child(_label(str(def["text"]), 12, Style.INK_SOFT))
 
@@ -212,7 +215,7 @@ func refresh() -> void:
     var st: Dictionary = state.rival_stats
     var max_owned: int = int(state.data["companies"]["max_owned"])
     box.add_child(_label("Rival companies", 15))
-    box.add_child(_label("They are not on your map. Each makes certain goods from certain inputs. While they thrive they keep those markets deep. When they lose money they weaken: they supply and buy less, prices shift and the market thins. They take contract offers too. You hold %d of %d possible companies. Dividends received: %s." % [Companies.owned_count(state), max_owned, Style.money0(int(st["dividends_cents"]))], 12, Style.INK_SOFT))
+    box.add_child(_label("They are not on your map. Each makes certain goods from certain inputs. While they thrive they keep those markets deep. When they lose money they weaken: they supply and buy less, prices shift and the market thins. They take contract offers too. Successful ones grow, and the bigger they are the more they cost. You hold %d of %d possible companies. Dividends received: %s." % [Companies.owned_count(state), max_owned, Style.money0(int(st["dividends_cents"]))], 12, Style.INK_SOFT))
     for id in ordered_ids():
         box.add_child(_card(id))
-    box.add_child(_label("Buying a company costs more the healthier it is. You receive half of its profit each day. It still trades as before, so buying it does not change the market, and it stops taking contract offers. If it goes bankrupt while you own it, you lose everything you paid. Selling is possible after %d days and returns only %d%% of the purchase price." % [int(state.data["companies"]["min_hold_days"]), int(round(float(state.data["companies"]["sell_back"]) * 100.0))], 12, Style.INK_SOFT))
+    box.add_child(_label("Buying a company costs more the healthier and the bigger it is. A company you own still grows, but slower, because you take half of its profit. You receive half of its profit each day. It still trades as before, so buying it does not change the market, and it stops taking contract offers. If it goes bankrupt while you own it, you lose everything you paid. Selling is possible after %d days and returns only %d%% of the purchase price." % [int(state.data["companies"]["min_hold_days"]), int(round(float(state.data["companies"]["sell_back"]) * 100.0))], 12, Style.INK_SOFT))

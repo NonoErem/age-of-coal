@@ -8,6 +8,11 @@ const STATUS_BUILT := "built"
 const STATUS_RUNNING := "running"
 const STATUS_PAUSED := "paused_missing_input"
 const STATUS_DEPLETED := "depleted"
+const STATUS_BLOCKED := "paused_storage_full"  # nowhere to put what it makes
+const STATUS_STOPPED := "stopped"              # paused by the player
+
+## States where a building only keeps a skeleton crew.
+const IDLE_STATUSES := [STATUS_PAUSED, STATUS_DEPLETED, STATUS_BLOCKED, STATUS_STOPPED]
 
 
 ## Runs one day for every building and returns a report.
@@ -21,7 +26,9 @@ static func run_day(state) -> Dictionary:
         var def: Dictionary = defs[b["type"]]
         var kind: String = str(def["kind"])
         var previous: String = str(b["status"])
-        if kind == "extractor":
+        if b.get("stopped", false):
+            b["status"] = STATUS_STOPPED
+        elif kind == "extractor":
             _run_extractor(state, b, def, produced)
         elif kind == "factory":
             _run_factory(state, b, def, produced, consumed)
@@ -33,7 +40,7 @@ static func run_day(state) -> Dictionary:
 ## A paused factory or a depleted mine only keeps a skeleton crew.
 static func upkeep_of(def: Dictionary, status: String, idle_factor: float) -> int:
     var cost: int = int(def["upkeep_per_day"])
-    if status == STATUS_PAUSED or status == STATUS_DEPLETED:
+    if IDLE_STATUSES.has(status):
         cost = int(round(float(cost) * idle_factor))
     return cost
 
@@ -54,9 +61,11 @@ static func _note_change(state, b: Dictionary, previous: String) -> void:
     var kind: String = ""
     if now == STATUS_PAUSED:
         kind = "paused"
+    elif now == STATUS_BLOCKED:
+        kind = "blocked"
     elif now == STATUS_DEPLETED:
         kind = "depleted"
-    elif now == STATUS_RUNNING and previous == STATUS_PAUSED:
+    elif now == STATUS_RUNNING and (previous == STATUS_PAUSED or previous == STATUS_BLOCKED):
         kind = "resumed"
     if kind != "":
         state.events.append({"kind": kind, "uid": b["uid"], "type": b["type"], "x": b["x"], "y": b["y"], "missing": b["missing"].duplicate()})
@@ -82,16 +91,30 @@ static func _run_extractor(state, b: Dictionary, def: Dictionary, produced: Dict
     var richness: float = float(info["richness"])
     var outputs: Dictionary = def["outputs"]
     var carry: Dictionary = b["carry"]
+    var stuck: bool = false
     for res in outputs:
+        if state.free_space() <= 0:
+            stuck = true  # no room: nothing is dug and nothing piles up
+            continue
         # Fractions carry over to the next day, so 5.6 units/day really averages 5.6.
         carry[res] = float(carry.get(res, 0.0)) + float(outputs[res]) * richness * taper
-        var whole: int = mini(int(floor(float(carry[res]) + 1e-9)), int(dep["remaining"]))
+        var possible: int = mini(int(floor(float(carry[res]) + 1e-9)), int(dep["remaining"]))
+        var whole: int = mini(possible, state.free_space())
+        if whole < possible:
+            # What does not fit is lost; only the fraction stays.
+            carry[res] = maxf(0.0, float(carry[res]) - float(possible - whole))
+            stuck = stuck or whole == 0
         if whole > 0:
             carry[res] = maxf(0.0, float(carry[res]) - float(whole))
             dep["remaining"] = int(dep["remaining"]) - whole
             _add(state.inventory, res, whole)
             _add(produced, res, whole)
-    b["status"] = STATUS_DEPLETED if int(dep["remaining"]) <= 0 else STATUS_RUNNING
+    if int(dep["remaining"]) <= 0:
+        b["status"] = STATUS_DEPLETED
+    elif stuck:
+        b["status"] = STATUS_BLOCKED
+    else:
+        b["status"] = STATUS_RUNNING
 
 
 static func _run_factory(state, b: Dictionary, def: Dictionary, produced: Dictionary, consumed: Dictionary) -> void:
@@ -104,8 +127,20 @@ static func _run_factory(state, b: Dictionary, def: Dictionary, produced: Dictio
         batches = mini(batches, floori(float(state.stock(res)) / float(need)))
         if state.stock(res) < need:
             missing.append(res)
+    # A recipe that makes more units than it uses needs room for the difference.
+    var net_units: int = 0
+    for res in def["outputs"]:
+        net_units += int(def["outputs"][res])
+    for res in inputs:
+        net_units -= int(inputs[res])
+    var space_limited: bool = false
+    if net_units > 0:
+        var fit: int = floori(float(state.free_space()) / float(net_units))
+        if fit < batches:
+            batches = fit
+            space_limited = true
     if batches <= 0:
-        b["status"] = STATUS_PAUSED
+        b["status"] = STATUS_BLOCKED if (space_limited and missing.is_empty()) else STATUS_PAUSED
         b["missing"] = missing
         b["batches"] = 0
         return

@@ -24,8 +24,11 @@ func fresh_data(neutral_trend: bool = true) -> Dictionary:
     var out: Dictionary = gd.duplicate()
     out["balance"] = gd["balance"].duplicate(true)
     out["contracts"] = gd["contracts"].duplicate(true)
+    out["balance"]["base_storage"] = 1000000  # these tests were written for unlimited storage
     out["events"] = gd["events"].duplicate(true)
     out["events"]["chance_per_day"] = 0.0
+    out["companies"] = gd["companies"].duplicate(true)
+    out["companies"]["take_contracts"] = false  # rivals snapping offers is tested in companies_test.gd
     if neutral_trend:
         out["balance"]["trend_volatility"] = 0.0
         out["balance"]["trend_reversion"] = 0.0
@@ -50,6 +53,43 @@ func _init() -> void:
         if ratio < 1.04 or ratio > 1.36:
             ok_prices = false
     check(ok_prices, "offers pay 105-135%% of the market price")
+
+    print("Offer lifetimes")
+    var cfg: Dictionary = gd["contracts"]
+    check(Contracts.offer_lifetime(cfg, 1.35) == 2 and Contracts.offer_lifetime(cfg, 1.05) == 16, "the best offers last 2 days, the dullest 16")
+    check(Contracts.offer_lifetime(cfg, 1.30) <= 4, "+30%% is gone within a few days (%d)" % Contracts.offer_lifetime(cfg, 1.30))
+    check(Contracts.offer_lifetime(cfg, 1.05) > 3 * Contracts.offer_lifetime(cfg, 1.30), "while +5%% stays much longer (%d days)" % Contracts.offer_lifetime(cfg, 1.05))
+    var monotonic: bool = true
+    var last: int = 999
+    for i in 31:
+        var life: int = Contracts.offer_lifetime(cfg, 1.05 + 0.01 * i)
+        if life > last:
+            monotonic = false
+        last = life
+    check(monotonic, "the better the premium, the shorter the offer, never the other way round")
+    gs = GameState.new(gd, 21)
+    gs.money_cents = 1000000000
+    gs.board = []
+    var consistent: bool = true
+    var made: int = 0
+    for _i in 60:
+        var o: Dictionary = Contracts.generate_offer(gs)
+        if o.is_empty():
+            continue
+        made += 1
+        if int(o["expires_day"]) - int(o["offered_day"]) + 1 != Contracts.offer_lifetime(cfg, float(o["premium"])):
+            consistent = false
+    check(made > 20 and consistent, "every offer made lasts exactly what its premium says (%d checked)" % made)
+    gs = GameState.new(gd, 22)
+    check(int(gs.board[0]["expires_day"]) == 60, "the tutorial offer stays open 60 days")
+    gs.board = []
+    var hot: Dictionary = {"id": 950, "client": "gasworks", "resource": "coal", "quantity": 50, "unit_price": 1300, "deadline_days": 20, "offered_day": gs.day, "expires_day": gs.day + 2, "premium": 1.30}
+    gs.board.append(hot)
+    gs.advance_day()
+    gs.advance_day()
+    check(gs.board.any(func(o: Dictionary) -> bool: return o["id"] == 950), "an offer is still there on its last day")
+    gs.advance_day()
+    check(not gs.board.any(func(o: Dictionary) -> bool: return o["id"] == 950) and gs.news.any(func(n: Dictionary) -> bool: return n["kind"] == "expired"), "and gone the day after, with a note in the news")
 
     print("Accept and deliver")
     gd = fresh_data()

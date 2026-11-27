@@ -4,11 +4,14 @@ extends HFlowContainer
 
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
+const Survey = preload("res://sim/survey.gd")
 
 signal tool_selected(building_id: String)
+signal survey_selected(level: int)
 
 var state
 var buttons: Dictionary = {}
+var survey_buttons: Dictionary = {}   # level -> Button
 var group: ButtonGroup
 
 
@@ -42,6 +45,23 @@ func setup(p_state) -> void:
             b.toggled.connect(func(on: bool) -> void: _on_toggled(id, on))
             buttons[id] = b
             add_child(b)
+    # Surveys share the group: one tool at a time.
+    var slabel := Label.new()
+    slabel.text = "Survey"
+    slabel.add_theme_color_override("font_color", Style.INK_SOFT)
+    slabel.add_theme_font_size_override("font_size", 12)
+    slabel.custom_minimum_size = Vector2(52, 0)
+    slabel.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    add_child(slabel)
+    for level in [1, 2]:
+        var sb := Button.new()
+        sb.toggle_mode = true
+        sb.button_group = group
+        sb.add_theme_font_size_override("font_size", 12)
+        sb.custom_minimum_size = Vector2(0, 42)
+        sb.toggled.connect(func(on: bool) -> void: survey_selected.emit(level if on else 0))
+        survey_buttons[level] = sb
+        add_child(sb)
     refresh()
 
 
@@ -52,6 +72,14 @@ func _on_toggled(id: String, on: bool) -> void:
 func clear_tool() -> void:
     for id in buttons:
         buttons[id].set_pressed_no_signal(false)
+    for level in survey_buttons:
+        survey_buttons[level].set_pressed_no_signal(false)
+
+
+func select_survey(level: int) -> void:
+    clear_tool()
+    if survey_buttons.has(level):
+        survey_buttons[level].set_pressed_no_signal(true)
 
 
 func select_tool(id: String) -> void:
@@ -60,7 +88,22 @@ func select_tool(id: String) -> void:
         buttons[id].set_pressed_no_signal(true)
 
 
+func _refresh_surveys() -> void:
+    var radius: int = int(state.data["map"]["survey"]["radius"])
+    var side: int = radius * 2 + 1
+    for level in survey_buttons:
+        var b: Button = survey_buttons[level]
+        var cost: int = Survey.cost(state, level)
+        b.text = "%s\n%s" % [Survey.level_name(state, level), Style.money0(cost)]
+        var deepest: String = "ore just under the surface" if level == 1 else "ore at every depth, the deepest and richest too"
+        b.tooltip_text = "%s\nCost %s, paid whatever is found.\nSurveys a %d by %d area around the tile you click and reveals %s.\nRevealed deposits are used like any other: pay the land, build a mine." % [Survey.level_name(state, level), Style.money0(cost), side, side, deepest]
+        var col: Color = Style.INK if cost <= state.money_cents else Style.BAD
+        for k in ["font_color", "font_hover_color", "font_pressed_color"]:
+            b.add_theme_color_override(k, col)
+
+
 func refresh() -> void:
+    _refresh_surveys()
     var defs: Dictionary = state.data["buildings"]
     var res: Dictionary = state.data["resources"]
     var idle: float = float(state.data["balance"]["idle_upkeep_factor"])

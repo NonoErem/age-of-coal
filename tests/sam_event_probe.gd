@@ -15,6 +15,7 @@ func run_case(amount: int, anticipation: float, wait_days: int) -> float:
     gd["balance"] = gd["balance"].duplicate(true)
     gd["balance"]["trend_volatility"] = 0.0
     gd["balance"]["trend_reversion"] = 0.0
+    gd["balance"]["base_storage"] = 1000000  # measure the pure price effect, ignoring room
     gd["events"] = gd["events"].duplicate(true)
     gd["events"]["chance_per_day"] = 0.0
     gd["events"]["anticipation"] = anticipation

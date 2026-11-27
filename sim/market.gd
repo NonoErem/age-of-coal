@@ -16,6 +16,8 @@ var _balance: Dictionary
 var trend: Dictionary = {}
 var pressure: Dictionary = {}
 var shock_mult: Dictionary = {}    # product of all running market events, set by MarketEvents
+var rival_mult: Dictionary = {}    # lasting price shift from weakened or bankrupt rival companies (see companies.gd)
+var depth_mult: Dictionary = {}    # how much deeper the rivals make each market (1.0 = none)
 var presence: Dictionary = {}      # smoothed units per day the company puts into this market
 var volume_today: Dictionary = {}  # units bought or sold on the market since the last day change
 
@@ -27,13 +29,15 @@ func _init(resources: Dictionary, balance: Dictionary) -> void:
         trend[id] = 1.0
         pressure[id] = 1.0
         shock_mult[id] = 1.0
+        rival_mult[id] = 1.0
+        depth_mult[id] = 1.0
         presence[id] = 0.0
         volume_today[id] = 0.0
 
 
 func depth(id: String) -> float:
     var def: Dictionary = _resources[id]
-    return float(def.get("depth", _balance["default_depth"]))
+    return float(def.get("depth", _balance["default_depth"])) * float(depth_mult[id])
 
 
 ## Units per day the whole market trades (everyone, not just you).
@@ -49,13 +53,13 @@ func base_price(id: String) -> float:
 
 ## Current mid price in cents (before spread and fee).
 func spot_price(id: String) -> float:
-    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(pressure[id])
+    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id]) * float(pressure[id])
 
 
 ## Price without the player's own trading pressure. Contracts are priced from this,
 ## so buying or selling heavily cannot inflate what a contract pays.
 func reference_price(id: String) -> float:
-    return base_price(id) * float(trend[id]) * float(shock_mult[id])
+    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id])
 
 
 ## Your slice of this market right now (0.01 = 1%).
@@ -162,6 +166,7 @@ func to_dict() -> Dictionary:
         "trend": trend.duplicate(),
         "pressure": pressure.duplicate(),
         "shock_mult": shock_mult.duplicate(),
+        "rival_mult": rival_mult.duplicate(),
         "presence": presence.duplicate(),
         "volume_today": volume_today.duplicate(),
     }
@@ -172,5 +177,6 @@ func load_dict(d: Dictionary) -> void:
         trend[id] = float(d["trend"].get(id, 1.0))
         pressure[id] = float(d["pressure"].get(id, 1.0))
         shock_mult[id] = float(d["shock_mult"].get(id, 1.0))
+        rival_mult[id] = float(d.get("rival_mult", {}).get(id, 1.0))
         presence[id] = float(d.get("presence", {}).get(id, 0.0))
         volume_today[id] = float(d.get("volume_today", {}).get(id, 0.0))

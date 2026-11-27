@@ -1,6 +1,7 @@
 extends SceneTree
 ## Dev tool: renders the main scene and saves a PNG. Needs a display (e.g. xvfb-run).
-##   xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -s tools/screenshot.gd -- out.png [script_to_run]
+##   xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-driver opengl3 --resolution 1920x1080 -s tools/screenshot.gd -- out.png res://tools/shot_scenarios.gd play --keep-window [--ui-scale=1.25]
+## --keep-window stops the game from resizing the window to its saved setting.
 
 func _initialize() -> void:
     create_timer(60.0).timeout.connect(func() -> void: quit(2))

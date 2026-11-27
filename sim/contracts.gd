@@ -2,6 +2,8 @@ extends RefCounted
 ## Contract board, delivery and failure. No reputation yet.
 ##
 ## Rules:
+## - The better an offer pays, the shorter it stays on the board: someone else would snap it up.
+##   (+30% lasts a few days, +5% a couple of weeks.)
 ## - No offers for goods a market event is distorting (see market_events.gd).
 ## - Offers pay 115-140% of the market reference price (tighter deadline and bigger quantity pay more).
 ## - The reference price ignores the player's own trading pressure, so it cannot be pumped.
@@ -19,14 +21,25 @@ static func setup(state) -> void:
     if tut.is_empty():
         return
     state.board.append(_make_offer(state, str(tut["client"]), str(tut["resource"]), int(tut["quantity"]),
-        int(tut["deadline_days"]), float(tut["premium"]), int(tut.get("valid_days", cfg["offer_valid_days"]))))
+        int(tut["deadline_days"]), float(tut["premium"]), int(tut.get("valid_days", 15))))
 
 
-static func _make_offer(state, client: String, res: String, qty: int, deadline: int, premium: float, valid_days: int) -> Dictionary:
+## How many days an offer stays on the board. The more it pays over the market, the shorter.
+static func offer_lifetime(cfg: Dictionary, premium: float) -> int:
+    var p_range: Array = cfg["premium"]
+    var life: Dictionary = cfg["offer_lifetime"]
+    var t: float = clampf((premium - float(p_range[0])) / (float(p_range[1]) - float(p_range[0])), 0.0, 1.0)
+    var days: float = float(life["min_days"]) + (float(life["max_days"]) - float(life["min_days"])) * pow(1.0 - t, float(life["curve"]))
+    return maxi(1, int(round(days)))
+
+
+## lifetime: how many days it is on the board, today included.
+static func _make_offer(state, client: String, res: String, qty: int, deadline: int, premium: float, lifetime: int) -> Dictionary:
     var offer: Dictionary = {
         "id": state.contract_next_id, "client": client, "resource": res, "quantity": qty,
         "unit_price": int(round(state.market.reference_price(res) * premium)),
-        "deadline_days": deadline, "offered_day": state.day, "expires_day": state.day + valid_days,
+        "deadline_days": deadline, "offered_day": state.day, "expires_day": state.day + lifetime - 1,
+        "premium": premium,
     }
     state.contract_next_id += 1
     return offer
@@ -60,7 +73,8 @@ static func daily_update(state) -> void:
     if state.board.size() < int(cfg["board_size"]) and state.contract_rng.randf() < float(cfg["offer_chance_per_day"]):
         var offer: Dictionary = generate_offer(state)
         if not offer.is_empty():
-            state.news.append({"kind": "offer", "client": offer["client"], "resource": offer["resource"]})
+            state.news.append({"kind": "offer", "client": offer["client"], "resource": offer["resource"], "quantity": offer["quantity"],
+                "over_pct": int(round((float(offer["premium"]) - 1.0) * 100.0)), "days": int(offer["expires_day"]) - state.day + 1})
 
 
 ## Tries a few times to make a fair offer and puts it on the board. Returns {} if none was possible.
@@ -92,7 +106,7 @@ static func generate_offer(state) -> Dictionary:
         var size: float = float(qty - qmin) / float(maxi(1, qmax - qmin))
         var premium: float = float(p_range[0]) + (float(p_range[1]) - float(p_range[0])) * (0.5 * tight + 0.5 * size)
         premium = clampf(premium + rng.randf_range(-0.02, 0.02), float(p_range[0]), float(p_range[1]))
-        var offer: Dictionary = _make_offer(state, client, res, qty, deadline, premium, int(cfg["offer_valid_days"]))
+        var offer: Dictionary = _make_offer(state, client, res, qty, deadline, premium, offer_lifetime(cfg, premium))
         state.board.append(offer)
         return offer
     return {}
@@ -103,7 +117,7 @@ static func max_deliverable(state, res: String, days: int) -> int:
     var have: float = float(state.stock(res)) + production_rate(state, res) * float(days)
     var bal: Dictionary = state.data["balance"]
     var unit_buy: float = state.market.reference_price(res) * (1.0 + float(bal["spread"])) * (1.0 + float(bal["fee"])) * 1.5
-    var buyable: float = floor(float(maxi(state.money_cents, 0)) / unit_buy)
+    var buyable: float = minf(floor(float(maxi(state.money_cents, 0)) / unit_buy), float(state.free_space()))
     return int(have + buyable)
 
 
@@ -111,7 +125,7 @@ static func production_rate(state, res: String) -> float:
     var rate: float = 0.0
     for b in state.buildings:
         var def: Dictionary = state.data["buildings"][b["type"]]
-        if not def["outputs"].has(res) or b["status"] == "depleted":
+        if not def["outputs"].has(res) or b["status"] == "depleted" or b["status"] == "stopped":
             continue
         var per_day: float = float(def["outputs"][res])
         if def["kind"] == "extractor":

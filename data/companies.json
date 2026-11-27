@@ -170,5 +170,11 @@
   ],
   "max_input_mult": 1.8,
   "idle_overhead": 0.5,
-  "rival_feel": 0.3
+  "rival_feel": 0.3,
+  "growth_reinvest": 0.3,
+  "growth_max_scale": 3.0,
+  "min_scale": 0.6,
+  "scale_decay": 0.01,
+  "restart_scale": 1.0,
+  "take_scale_cap": 1.6
 }

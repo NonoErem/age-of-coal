@@ -12,6 +12,13 @@ static func load_json(path: String) -> Variant:
     return parsed
 
 
+## A missing file is fine here (the game then runs without rival companies).
+static func load_json_optional(path: String) -> Variant:
+    if not FileAccess.file_exists(path):
+        return null
+    return load_json(path)
+
+
 static func load_game_data(dir: String = "res://data") -> Dictionary:
     var map: Variant = load_json(dir + "/map.json")
     var map_out: Dictionary = {}
@@ -28,7 +35,13 @@ static func load_game_data(dir: String = "res://data") -> Dictionary:
     if typeof(events) == TYPE_DICTIONARY:
         events_out = events
         events_out["events"] = _index_by_id(events.get("events", []))
+    var companies: Variant = load_json_optional(dir + "/companies.json")
+    var companies_out: Dictionary = {"enabled": false, "list": {}}
+    if typeof(companies) == TYPE_DICTIONARY:
+        companies_out = companies
+        companies_out["list"] = _index_by_id(companies.get("companies", []))
     return {
+        "companies": companies_out,
         "events": events_out,
         "balance": load_json(dir + "/balance.json"),
         "resources": _index_by_id(load_json(dir + "/resources.json")),
@@ -88,6 +101,11 @@ static func validate(data: Dictionary) -> Array:
     else:
         var w: int = int(map["width"])
         var h: int = int(map["height"])
+        var sv: Array = map.get("start_view", [0, 0])
+        if sv.size() != 2 or int(sv[0]) < 0 or int(sv[1]) < 0 or int(sv[0]) >= w or int(sv[1]) >= h:
+            errors.append("map: start_view must be a tile inside the map")
+        if w < 1 or h < 1:
+            errors.append("map: width and height must be at least 1")
         var seen: Dictionary = {}
         for id in map["deposits"]:
             var d: Dictionary = map["deposits"][id]
@@ -107,6 +125,9 @@ static func validate(data: Dictionary) -> Array:
                 errors.append("deposit %s: amount must be > 0" % id)
             if int(d.get("land_cost", -1)) < 0:
                 errors.append("deposit %s: land_cost missing or negative" % id)
+            if int(d.get("depth", 0)) < 0 or int(d.get("depth", 0)) > 2:
+                errors.append("deposit %s: depth must be 0 (visible), 1 or 2" % id)
+        errors.append_array(_validate_survey(map))
 
     var cfg: Dictionary = data["contracts"]
     if cfg.is_empty():
@@ -123,11 +144,25 @@ static func validate(data: Dictionary) -> Array:
             for res_id in wants:
                 if not cfg["quantities"].has(res_id):
                     errors.append("client %s: no quantity range for '%s'" % [cid, res_id])
+        var life: Dictionary = cfg.get("offer_lifetime", {})
+        if int(life.get("min_days", 0)) < 1 or int(life.get("max_days", 0)) < int(life.get("min_days", 0)) or float(life.get("curve", 0.0)) <= 0.0:
+            errors.append("contracts: offer_lifetime needs min_days >= 1, max_days >= min_days and a curve above 0")
+        var standing: Dictionary = cfg.get("standing", {})
+        if int(standing.get("max_orders", 0)) < 1 or int(standing.get("max_days", 0)) < 1 or int(standing.get("max_qty_per_day", 0)) < 1:
+            errors.append("contracts: standing needs max_orders, max_days and max_qty_per_day of at least 1")
         var tut: Dictionary = cfg.get("tutorial", {})
         if not tut.is_empty():
             if not cfg["clients"].has(tut.get("client", "")) or not cfg["quantities"].has(tut.get("resource", "")):
                 errors.append("tutorial contract refers to an unknown client or resource")
 
+    var bal: Dictionary = data["balance"]
+    if int(bal.get("base_storage", 0)) < 1:
+        errors.append("balance: base_storage must be at least 1")
+    if float(bal.get("demolish_refund", -1.0)) < 0.0 or float(bal.get("demolish_refund", 2.0)) > 1.0:
+        errors.append("balance: demolish_refund must be between 0 and 1")
+    for id in buildings:
+        if buildings[id].get("kind", "") == "storage" and int(buildings[id].get("capacity", 0)) < 1:
+            errors.append("building %s: a storage building needs a capacity" % id)
     var ev: Dictionary = data["events"]
     if ev.is_empty():
         errors.append("events.json failed to load")
@@ -154,8 +189,99 @@ static func validate(data: Dictionary) -> Array:
             if float(e.get("weight", 0.0)) <= 0.0:
                 errors.append("event %s: weight must be > 0" % eid)
 
+    errors.append_array(_validate_companies(data))
     var start: Dictionary = data["balance"].get("start_inventory", {})
     for res_id in start:
         if not resources.has(res_id):
             errors.append("balance start_inventory: unknown resource '%s'" % res_id)
+    return errors
+
+
+static func _validate_companies(data: Dictionary) -> Array:
+    var errors: Array = []
+    var c: Dictionary = data.get("companies", {})
+    if not bool(c.get("enabled", false)):
+        return errors
+    var resources: Dictionary = data["resources"]
+    for key in ["friction", "price_sensitivity", "mult_min", "mult_max", "mult_smoothing", "weak_below", "healthy_above",
+            "shrink", "grow", "comfort_cash", "debt_limit", "revival_days", "revival_strength", "dividend_rate",
+            "buy_floor", "sell_back", "min_hold_days", "max_owned", "take_base", "take_peak", "max_input_mult", "idle_overhead", "rival_feel", "growth_reinvest", "growth_max_scale", "min_scale", "scale_decay", "restart_scale", "take_scale_cap"]:
+        if not c.has(key):
+            errors.append("companies: '%s' is missing" % key)
+    if not errors.is_empty():
+        return errors
+    if float(c["mult_min"]) <= 0.0 or float(c["mult_min"]) > 1.0 or float(c["mult_max"]) < 1.0:
+        errors.append("companies: mult_min must be in (0, 1] and mult_max at least 1")
+    if float(c["weak_below"]) >= float(c["healthy_above"]):
+        errors.append("companies: weak_below must be lower than healthy_above")
+    if float(c["buy_floor"]) <= 0.0 or float(c["buy_floor"]) >= 1.0:
+        errors.append("companies: buy_floor must be between 0 and 1")
+    if float(c["sell_back"]) <= 0.0 or float(c["sell_back"]) >= 1.0:
+        errors.append("companies: sell_back must be above 0 and below 1, or buying and selling would be free money")
+    if float(c["revival_strength"]) <= 0.0 or float(c["revival_strength"]) > 1.0 or int(c["revival_days"]) < 1:
+        errors.append("companies: revival_strength must be in (0, 1] and revival_days at least 1")
+    if float(c["dividend_rate"]) < 0.0 or float(c["dividend_rate"]) > 1.0:
+        errors.append("companies: dividend_rate must be between 0 and 1")
+    if float(c["take_base"]) < 0.0 or float(c["take_peak"]) < float(c["take_base"]) or float(c["take_peak"]) > 1.0:
+        errors.append("companies: take_base and take_peak must satisfy 0 <= base <= peak <= 1")
+    if float(c["growth_max_scale"]) < 1.0 or float(c["min_scale"]) <= 0.0 or float(c["min_scale"]) > 1.0:
+        errors.append("companies: growth_max_scale must be at least 1 and min_scale in (0, 1]")
+    if float(c["restart_scale"]) < float(c["min_scale"]) or float(c["restart_scale"]) > float(c["growth_max_scale"]):
+        errors.append("companies: restart_scale must lie between min_scale and growth_max_scale")
+    if float(c["growth_reinvest"]) < 0.0 or float(c["growth_reinvest"]) > 1.0 or float(c["scale_decay"]) < 0.0 or float(c["scale_decay"]) >= 1.0:
+        errors.append("companies: growth_reinvest must be 0..1 and scale_decay 0..1")
+    if float(c["rival_feel"]) < 0.0 or float(c["rival_feel"]) > 1.0:
+        errors.append("companies: rival_feel must be between 0 and 1")
+    if float(c["idle_overhead"]) < 0.0 or float(c["idle_overhead"]) > 1.0:
+        errors.append("companies: idle_overhead must be between 0 and 1")
+    if float(c["friction"]) < 0.0 or float(c["friction"]) > 1.0:
+        errors.append("companies: friction must be between 0 and 1")
+    if c["list"].is_empty():
+        errors.append("companies: the list is empty")
+    for id in c["list"]:
+        var def: Dictionary = c["list"][id]
+        if def.get("outputs", {}).is_empty():
+            errors.append("company %s makes nothing" % id)
+        for key in ["outputs", "inputs"]:
+            for res_id in def.get(key, {}):
+                if not resources.has(res_id):
+                    errors.append("company %s: unknown resource '%s' in %s" % [id, res_id, key])
+                elif float(def[key][res_id]) <= 0.0:
+                    errors.append("company %s: %s of %s must be above 0" % [id, key, res_id])
+        for res_id in def.get("depth_bonus", {}):
+            if not def.get("outputs", {}).has(res_id) or float(def["depth_bonus"][res_id]) < 0.0:
+                errors.append("company %s: depth_bonus for '%s' must be for one of its outputs and not negative" % [id, res_id])
+        for key in ["overhead", "start_cash", "base_value"]:
+            if int(def.get(key, 0)) <= 0:
+                errors.append("company %s: %s must be above 0" % [id, key])
+    return errors
+
+
+static func _validate_survey(map: Dictionary) -> Array:
+    var errors: Array = []
+    var sv: Variant = map.get("survey")
+    var needs: bool = false
+    for id in map["deposits"]:
+        if int(map["deposits"][id].get("depth", 0)) > 0:
+            needs = true
+    if typeof(sv) != TYPE_DICTIONARY:
+        if needs:
+            errors.append("map: there are hidden deposits but no 'survey' section")
+        return errors
+    if int(sv.get("radius", 0)) < 1:
+        errors.append("survey: radius must be at least 1")
+    var levels: Dictionary = sv.get("levels", {})
+    var prev_cost: int = 0
+    for lv in [1, 2]:
+        if not levels.has(str(lv)):
+            errors.append("survey: level %d is missing" % lv)
+            continue
+        var c: int = int(levels[str(lv)].get("cost", 0))
+        if c <= 0:
+            errors.append("survey: level %d needs a cost above 0" % lv)
+        if c <= prev_cost:
+            errors.append("survey: level %d must cost more than level %d" % [lv, lv - 1])
+        prev_cost = c
+        if str(levels[str(lv)].get("name", "")) == "":
+            errors.append("survey: level %d needs a name" % lv)
     return errors

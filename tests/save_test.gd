@@ -73,6 +73,15 @@ func _init() -> void:
             same = false
     check(same, "the loaded game plays on exactly like the original for 30 days")
 
+    print("Saves from a smaller map")
+    var small: Dictionary = gs.to_dict()
+    for id in gd["map"]["deposits"]:
+        if str(id).ends_with("_4") or str(id).ends_with("_5") or str(id).ends_with("_6") or str(id).ends_with("_7"):
+            small["deposits"].erase(id)
+    var gs_small = GameState.new(gd, 1)
+    check(gs_small.load_dict(JSON.parse_string(JSON.stringify(small))), "a save without the newer deposits still loads")
+    check(int(gs_small.deposits["coal_4"]["remaining"]) == int(gd["map"]["deposits"]["coal_4"]["amount"]) and gs_small.buildings.size() == 2, "the new deposits start full and the old game is intact")
+
     print("Bad files")
     check(SaveManager.restore(gd, "slot_3", DIR)["reason"] == "missing", "a missing save is reported")
     write_raw("slot_2", "{ this is not json")

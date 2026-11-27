@@ -3,6 +3,7 @@ extends PanelContainer
 
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
+const Survey = preload("res://sim/survey.gd")
 const Production = preload("res://sim/production.gd")
 
 signal stop_toggled(uid: int)
@@ -10,6 +11,7 @@ signal demolish_confirmed(uid: int)
 
 var state
 var tool_id: String = ""
+var survey_level: int = 0
 var selected: Vector2i = Vector2i(-1, -1)
 var icon_holder: HBoxContainer
 var icon: TextureRect
@@ -68,6 +70,8 @@ func refresh() -> void:
     if selected.x < 0:
         title_label.text = "Nothing selected"
         detail_label.text = "Click a tile to inspect it. Pick a building below to place one."
+        if survey_level > 0:
+            detail_label.text = _survey_hint(-1, -1)
         return
     var x: int = selected.x
     var y: int = selected.y
@@ -126,6 +130,8 @@ func refresh() -> void:
         title_label.text = "%s deposit at (%d, %d)" % [str(res[info["resource"]]["name"]), x, y]
         var remaining: int = int(state.deposits[dep_id]["remaining"])
         lines.append("Richness x%.1f. %s of %s left. Land %s" % [float(info["richness"]), Style.num(remaining), Style.num(int(info["amount"])), Style.money0(int(info["land_cost"]))])
+        if int(info.get("depth", 0)) > 0:
+            lines.append("A deep deposit, found by a level %d survey." % int(info["depth"]))
         bar.visible = true
         bar.max_value = float(info["amount"])
         bar.value = float(remaining)
@@ -141,8 +147,26 @@ func refresh() -> void:
             lines.append("Click to place %s for %s%s" % [str(def2["name"]), Style.money(cost), "" if cost <= state.money_cents else " (not enough cash)"])
         else:
             lines.append("%s cannot go here: %s" % [str(def2["name"]), reason_text(why)])
+    if survey_level > 0:
+        lines.append(_survey_hint(x, y))
     icon.visible = icon.texture != null
     detail_label.text = "\n".join(lines)
+
+
+## What the chosen survey would do on this tile (x < 0: just describe the tool).
+func _survey_hint(x: int, y: int) -> String:
+    var side: int = int(state.data["map"]["survey"]["radius"]) * 2 + 1
+    var name_text: String = Survey.level_name(state, survey_level)
+    var price: int = Survey.cost(state, survey_level)
+    var reach: String = "ore just under the surface" if survey_level == 1 else "ore at every depth"
+    var text: String = "%s: %s. Click the map to survey a %d by %d area for %s; it reveals %s. You pay whatever is found." % [name_text, "ready", side, side, Style.money0(price), reach]
+    if x >= 0:
+        var why: String = Survey.check(state, x, y, survey_level)
+        if why != "":
+            text = "%s here: %s" % [name_text, Survey.reason_text(why)]
+        else:
+            text = "Click to run a %s here for %s%s. %d of the %d tiles around here are new to you." % [name_text.to_lower(), Style.money(price), "" if price <= state.money_cents else " (not enough cash)", Survey.new_tiles(state, x, y, survey_level), Survey.area(state, x, y).size.x * Survey.area(state, x, y).size.y]
+    return text
 
 
 func _build_actions(b: Dictionary, def: Dictionary) -> void:

@@ -16,6 +16,8 @@ Godot 4.3+. Open this folder in the Godot project manager and press F5 for the d
     godot --headless --path . -s tests/art_test.gd        # every building, resource and deposit has well-formed art
     godot --headless --path . -s tests/economy_test.gd    # every building must pay for itself (reads the data files)
     godot --headless --path . -s tests/companies_test.gd  # rival companies: market effects, bankruptcy, buying, offers, flips, saving
+    godot --headless --path . -s tests/survey_test.gd     # surveys: areas, depth levels, hidden deposits, costs, saving
+    godot --headless --path . -s tests/rules_test.gd      # automation rules: keep/sell, limits, caps, conflicts, churn guard, saving
     godot --headless --path . -s tests/ui_smoke_test.gd   # drives the real screen like a player
     godot --headless --path . -s tests/sam_contract_probe.gd  # informational: buy-to-deliver profit per resource
     godot --headless --path . -s tests/sam_event_probe.gd     # informational: profit from speculating on an announced event
@@ -211,7 +213,40 @@ Northern Rail & Engineering (rails, machinery) and Midland Tool & Die (tools). E
   Selling is possible after 30 days and returns 35% of the purchase price at that moment, so a quick flip is impossible and holding a healthy company is a slow loss
   unless the dividends pay for it. Sam's check: nursing a bankrupt Tyne Steel for about 40 days nets roughly a third of its full value, bought at 15%.
 - `"enabled": false` in companies.json removes the rivals completely (prices and depth go back to the base values).
-- Saves: version 8 (older saves are refused, as before). Tests that count exact money turn rivals' offer-taking off.
+- **Growth.** Each company has a size (`scale`, 1.0 at the start, shown as "size x1.4" on its card). A healthy company that makes a profit and has comfortable cash
+  reinvests `growth_reinvest` (30%) of what it keeps after dividends: `scale += spend / base_value x (1 - scale / growth_max_scale)`, so growth slows as it nears the
+  cap (3.0). Size multiplies its margin, overhead, cash buffers, its pull on market depth and supply, its chance to take offers, and its **price**:
+  a very successful company becomes steadily dearer instead of being worth its maximum from day one. In debt it shrinks 1% a day, and a bankruptcy restarts it at
+  size 1.0 or less. A company you own grows too, but slower, because you take half its profit. Typical result after 300 days: average size x1.6 to x2.1 and about
+  three busts per 1000 days across all eight, with no cascade. Sam's check: a healthy Blackwater held 300 days returns about 88% of its price (payback around 240 days),
+  so buying a leader is a slow bet, not a free ride. Tunables: `growth_reinvest`, `growth_max_scale`, `min_scale`, `scale_decay`, `restart_scale`, `take_scale_cap`.
+- Saves: version 9 (older saves are refused, as before). Tests that count exact money turn rivals' offer-taking off.
+
+## Surveys (map.json "survey", sim/survey.gd, Survey buttons in the build bar)
+
+The 26 deposits of earlier versions are still visible from day one. Another 14 are hidden under the ground (9 at depth 1, 5 at depth 2, every ore). Deeper ones are bigger,
+richer and dearer to buy. Pick **Shallow survey** ($1,200) or **Deep survey** ($3,500) in the build bar and click the map: it surveys a 7 x 7 area around the tile.
+
+- A level 1 survey reveals depth-1 deposits in the area; a level 2 survey reveals depth 1 and depth 2. You pay whatever is found, so a poor guess costs money.
+- Surveyed ground is tinted (lighter for shallow, darker for deep). A survey that would add nothing new at that level (every tile already surveyed that deep) is refused and free.
+- Surveys are deterministic: the hidden deposits are fixed in map.json, there is no luck, only the question of where to look. Deep deposits wear a small D1 / D2 tag.
+- A revealed deposit is used like any other (land price, mine, richness). Until then the tile looks like empty ground, so a factory may stand on it; the deposit shows once surveyed,
+  and a mine there means demolishing the factory first. Loading a game keeps what was revealed, and a deposit under one of your mines is always shown.
+- Tunables in map.json: `survey.radius`, `survey.levels.N.cost` and `name`; each hidden deposit carries `"depth": 1|2`.
+
+## Automation rules (sim/rules.gd, the Rules view of the Orders tab)
+
+Standing orders are a fixed amount for a number of days. Rules react to what you hold and run until deleted:
+
+- **Keep at least N**: each day, buy what is missing to reach N.
+- **Sell what is over N**: each day, sell the stock above N (N = 0 sells everything as it arrives).
+- Options: a price limit (a keep rule pays at most, a sell rule accepts at least), a per-day cap (default and maximum 500), and for keep rules a cash floor.
+  Pause and resume without losing the rule's history.
+- Rules trade through the normal market (spread, fee, price impact), so they save clicks, not money. They never take you into debt and never overfill storage.
+- When one cannot do its job (price outside the limit, no cash, no room) the log says so once, and again when it works normally again.
+- **Churn guard (Sam):** a keep level above the sell level for the same good would buy and sell the same units every day and lose the spread each time, so it is refused
+  (paused rules do not count; resuming one is checked). One rule of each kind per good, at most 12 rules.
+- Order of the day: production, upkeep, standing orders, rules, rivals, market. Tunables in balance.json "rules": `max_rules`, `max_level`, `max_per_day`.
 
 ## Not built yet
 

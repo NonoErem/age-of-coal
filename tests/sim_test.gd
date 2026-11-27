@@ -24,6 +24,7 @@ func fresh_data(neutral_trend: bool = true) -> Dictionary:
     var out: Dictionary = gd.duplicate()
     out["balance"] = gd["balance"].duplicate(true)
     out["map"] = gd["map"].duplicate(true)
+    out["balance"]["base_storage"] = 1000000  # these tests were written for unlimited storage
     out["events"] = gd["events"].duplicate(true)
     out["events"]["chance_per_day"] = 0.0
     if neutral_trend:
