@@ -12,6 +12,13 @@
     {"id": "collapse", "name": "Collapse", "start": 800, "color": "#5a2a2a", "text": "The world market is nearly gone. Hold on to what you can make yourself."}
   ],
 
+  "night": {
+    "dusk_at_landing": 0.12,
+    "max": 0.5,
+    "years_to_full": 1.5,
+    "color": "#27305a"
+  },
+
   "economy": {
     "warning_drop": 0.05,
     "drop_per_year": 0.35,

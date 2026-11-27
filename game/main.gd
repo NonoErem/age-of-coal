@@ -29,6 +29,7 @@ const Rules = preload("res://sim/rules.gd")
 const Crisis = preload("res://sim/crisis.gd")
 const TimeBar = preload("res://ui/time_bar.gd")
 const Telegram = preload("res://ui/telegram.gd")
+const NightOverlay = preload("res://ui/night_overlay.gd")
 
 const SPEEDS := [1, 2, 4]
 
@@ -47,6 +48,7 @@ var settings
 var top_bar
 var time_bar
 var telegram
+var night
 var map_view
 var inspector
 var build_bar
@@ -189,6 +191,11 @@ func _build_ui() -> void:
     event_log.setup()
     root.add_child(event_log)
     _fit_side_panel()
+
+    # Night falls over the game screen, but not over the menu and telegrams.
+    night = NightOverlay.new()
+    night.setup(state)
+    add_child(night)
 
     # The menu goes last so it sits on top of everything.
     menu = GameMenu.new()
@@ -697,6 +704,7 @@ func refresh_all() -> void:
     contracts_panel.refresh()
     automation_panel.refresh()
     time_bar.refresh()
+    night.refresh()
     companies_panel.refresh()
     news_panel.refresh()
     inspector.refresh()

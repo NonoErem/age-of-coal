@@ -443,6 +443,9 @@ func _initialize() -> void:
     check(int(oven["health"]) == 120 and "Repaired Coke oven" in scene.event_log.text.get_parsed_text(), "repairing works from the inspector")
     scene.select_tile(21, 12)
     check("Reach 2 tiles" in scene.inspector.detail_label.text, "a defense shows its reach, damage and ammunition")
+    scene.night.color = Crisis.night_tint(s)
+    check(scene.night.visible and scene.night.color.v < 1.0 and scene.night.mouse_filter == Control.MOUSE_FILTER_IGNORE, "night has begun to fall, and never takes the mouse")
+    check(scene.night.get_index() < scene.menu.get_index() and scene.night.get_index() < scene.telegram.get_index(), "the menu and telegrams stay above the night, bright")
     scene.map_view.cover_button.button_pressed = true
     check(scene.map_view.show_cover, "the Cover button shows the defenses' reach")
 

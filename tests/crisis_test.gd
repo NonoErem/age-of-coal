@@ -284,6 +284,24 @@ func _init() -> void:
     check(small > 0 and float(big) / 3.0 < float(small), "the crisis burden weighs less, size for size, on big companies")
     check(Crisis.rival_burden(at_day(landing - 5), 10000, 1.0) == 0, "and none before the landing")
 
+    print("Night falls")
+    var gn = GameState.new(data(), 1)
+    var nc: Dictionary = cfg["night"]
+    check(Crisis.night(gn, announce - 1) == 0.0 and Crisis.night_tint(gn, 1) == Color.WHITE, "broad daylight until the announcement")
+    check(Crisis.night(gn, announce + 30) > 0.0 and Crisis.night(gn, announce + 30) < float(nc["dusk_at_landing"]), "it starts to darken during the warning")
+    check(is_equal_approx(Crisis.night(gn, landing), float(nc["dusk_at_landing"])), "dusk by the landing")
+    var prev: float = -1.0
+    var rising: bool = true
+    for dd2 in range(landing, landing + 900, 30):
+        if Crisis.night(gn, dd2) < prev:
+            rising = false
+        prev = Crisis.night(gn, dd2)
+    check(rising, "darker every month")
+    check(is_equal_approx(Crisis.night(gn, landing + 5000), float(nc["max"])) and float(nc["max"]) <= 0.8, "and capped, so the screen stays readable")
+    var bad3: Dictionary = data()
+    bad3["crisis"]["night"]["max"] = 0.95
+    check(not DataLoader.validate(bad3).is_empty(), "a night too dark to read is refused")
+
     print("Switched off")
     var off: Dictionary = data()
     off["crisis"] = {"enabled": false}

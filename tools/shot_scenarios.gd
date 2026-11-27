@@ -69,7 +69,7 @@ func run(scene: Control, name: String) -> void:
                 s.advance_day()
             scene._log_day()
             scene.refresh_all()
-        "invasion":
+        "invasion", "invasion_late":
             s.data["events"]["chance_per_day"] = 0.0
             s.money_cents = 50000000
             for spot in [["coke_oven", 9, 7], ["blast_furnace", 11, 7], ["steelworks", 13, 8], ["warehouse", 10, 9], ["munitions_works", 12, 10], ["mg_nest", 7, 5], ["mg_nest", 15, 6], ["mg_nest", 8, 11], ["field_battery", 12, 5]]:
@@ -103,7 +103,17 @@ func run(scene: Control, name: String) -> void:
             scene.map_view.cover_button.button_pressed = true
             scene.select_tile(int(hit["x"]), int(hit["y"]))
             scene.market_panel.select_resource("munitions")
+            if name == "invasion_late":
+                s.day += 420
+                Crisis.apply_market(s)
             scene.refresh_all()
+            scene.night.color = Crisis.night_tint(s)
+        "dusk":
+            s.data["events"]["chance_per_day"] = 0.0
+            for d in 372:
+                s.advance_day()
+            scene.refresh_all()
+            scene.night.color = Crisis.night_tint(s)
         "survey":
             s.money_cents = 3000000
             s.data["events"]["chance_per_day"] = 0.0
