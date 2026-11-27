@@ -1,6 +1,7 @@
 extends ScrollContainer
 ## Prices with history charts, and trading with a preview of what the trade does to the price.
 
+const Crisis = preload("res://sim/crisis.gd")
 const Style = preload("res://ui/style.gd")
 const Sparkline = preload("res://ui/sparkline.gd")
 const MarketEvents = preload("res://sim/market_events.gd")
@@ -203,6 +204,12 @@ func refresh() -> void:
         for t in troubled:
             names.append("%s (%s)" % [str(state.data["companies"]["list"][t["company"]]["name"]), str(t["status"])])
         lines.append("Rival trouble moves this price %+d%%: %s." % [rival_pct, ", ".join(names)])
+    if Crisis.announced(state):
+        var cpct: int = int(round((float(m.crisis_mult[id2]) - 1.0) * 100.0))
+        var cl: String = "Invasion: price %+d%%, spread %d%% and fee %d%% (normally %d%% and %d%%)" % [cpct, int(round(m.spread() * 100.0)), int(round(m.fee() * 100.0)), int(round(float(state.data["balance"]["spread"]) * 100.0)), int(round(float(state.data["balance"]["fee"]) * 100.0))]
+        if m.trade_cap >= 0:
+            cl += ". Shipping: %d units a day, %d left today" % [m.trade_cap, m.trade_room(id2)]
+        lines.append(cl + ".")
     detail_event.visible = not lines.is_empty()
     detail_event.text = "\n".join(lines)
     big_chart.set_data(state.history.get(id2, []), m.base_price(id2))
@@ -226,9 +233,13 @@ func _update_preview() -> void:
     var cost: int = m.quote_buy(id, qty)
     var up: float = (m.pressure_after(id, qty, true) / p0 - 1.0) * 100.0
     var has_room: bool = qty <= state.free_space()
-    var can_buy: bool = cost <= state.money_cents and has_room
+    var ship: int = m.trade_room(id)
+    var can_ship: bool = ship < 0 or qty <= ship
+    var can_buy: bool = cost <= state.money_cents and has_room and can_ship
     var why_not: String = ""
-    if not has_room:
+    if not can_ship:
+        why_not = ". Shipping limit: only %d more today" % ship
+    elif not has_room:
         why_not = ". No room: only %d free (warehouses add more)" % state.free_space()
     elif cost > state.money_cents:
         why_not = ". Not enough cash"
@@ -239,8 +250,13 @@ func _update_preview() -> void:
     var held: int = state.stock(id)
     var revenue: int = m.quote_sell(id, qty)
     var down: float = (1.0 - m.pressure_after(id, qty, false) / p0) * 100.0
-    var can_sell: bool = qty <= held
-    sell_preview.text = "Sell %d: +%s (avg %s), price falls %.1f%%%s" % [qty, Style.money(revenue), Style.money(int(float(revenue) / qty)), down, "" if can_sell else ". You only hold %d" % held]
+    var can_sell: bool = qty <= held and can_ship
+    var sell_why: String = ""
+    if qty > held:
+        sell_why = ". You only hold %d" % held
+    elif not can_ship:
+        sell_why = ". Shipping limit: only %d more today" % ship
+    sell_preview.text = "Sell %d: +%s (avg %s), price falls %.1f%%%s" % [qty, Style.money(revenue), Style.money(int(float(revenue) / qty)), down, sell_why]
     sell_preview.add_theme_color_override("font_color", Style.INK_SOFT if can_sell else Style.BAD)
     sell_button.disabled = not can_sell
 
@@ -251,7 +267,7 @@ func _on_buy() -> void:
     if r["ok"]:
         message.emit("Bought %d %s for %s." % [qty, str(state.data["resources"][selected_id]["name"]).to_lower(), Style.money(int(r["cost"]))], "info")
     else:
-        message.emit("Cannot buy: %s" % str(r["reason"]), "warn")
+        message.emit("Cannot buy: %s" % _why(r), "warn")
     changed.emit()
 
 
@@ -261,5 +277,18 @@ func _on_sell() -> void:
     if r["ok"]:
         message.emit("Sold %d %s for %s." % [qty, str(state.data["resources"][selected_id]["name"]).to_lower(), Style.money(int(r["revenue"]))], "info")
     else:
-        message.emit("Cannot sell: %s" % str(r["reason"]), "warn")
+        message.emit("Cannot sell: %s" % _why(r), "warn")
     changed.emit()
+
+
+func _why(r: Dictionary) -> String:
+    match str(r["reason"]):
+        "market_limit":
+            return "shipping limits, only %d more today." % int(r["room"])
+        "storage_full":
+            return "no room in storage."
+        "insufficient_funds":
+            return "not enough cash."
+        "insufficient_stock":
+            return "you do not hold that many."
+    return str(r["reason"])

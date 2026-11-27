@@ -172,6 +172,8 @@ static func result_text(result: String) -> String:
         "partial_money": return "only part was bought: not enough cash"
         "no_money": return "nothing was bought: not enough cash"
         "price": return "skipped: the price was outside your limit"
+        "partial_limit": return "only part was traded: shipping limits"
+        "market_limit": return "nothing was traded: today's shipping limit is used up"
         "failed": return "it could not trade"
     return ""
 

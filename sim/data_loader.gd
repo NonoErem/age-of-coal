@@ -40,7 +40,9 @@ static func load_game_data(dir: String = "res://data") -> Dictionary:
     if typeof(companies) == TYPE_DICTIONARY:
         companies_out = companies
         companies_out["list"] = _index_by_id(companies.get("companies", []))
+    var crisis: Variant = load_json_optional(dir + "/crisis.json")
     return {
+        "crisis": crisis if typeof(crisis) == TYPE_DICTIONARY else {"enabled": false},
         "companies": companies_out,
         "events": events_out,
         "balance": load_json(dir + "/balance.json"),
@@ -190,6 +192,15 @@ static func validate(data: Dictionary) -> Array:
                 errors.append("event %s: weight must be > 0" % eid)
 
     errors.append_array(_validate_companies(data))
+    errors.append_array(_validate_crisis(data))
+    for id in buildings:
+        var bd: Dictionary = buildings[id]
+        if bd.get("kind", "") == "defense":
+            if int(bd.get("range", 0)) < 1 or int(bd.get("damage", 0)) < 1:
+                errors.append("building %s: a defense needs a range and damage of at least 1" % id)
+            for res_id in bd.get("ammo", {}):
+                if not resources.has(res_id):
+                    errors.append("building %s: unknown ammunition '%s'" % [id, res_id])
     var start: Dictionary = data["balance"].get("start_inventory", {})
     for res_id in start:
         if not resources.has(res_id):
@@ -254,6 +265,48 @@ static func _validate_companies(data: Dictionary) -> Array:
         for key in ["overhead", "start_cash", "base_value"]:
             if int(def.get(key, 0)) <= 0:
                 errors.append("company %s: %s must be above 0" % [id, key])
+    return errors
+
+
+static func _validate_crisis(data: Dictionary) -> Array:
+    var errors: Array = []
+    var c: Dictionary = data.get("crisis", {})
+    if not bool(c.get("enabled", false)):
+        return errors
+    for key in ["start_date", "announce_day", "landing_day", "year_days", "phases", "economy", "access", "rivals", "damage", "aliens"]:
+        if not c.has(key):
+            errors.append("crisis: '%s' is missing" % key)
+    if not errors.is_empty():
+        return errors
+    if int(c["announce_day"]) < 2 or int(c["landing_day"]) <= int(c["announce_day"]):
+        errors.append("crisis: announce_day must be at least 2 and landing_day after it")
+    var last: int = 0
+    for p in c["phases"]:
+        if int(p.get("start", 0)) <= last:
+            errors.append("crisis: phases must start on increasing days, the first on day 1")
+        last = int(p.get("start", 0))
+    if c["phases"].is_empty() or int(c["phases"][0]["start"]) != 1:
+        errors.append("crisis: the first phase must start on day 1")
+    var starts: Array = c["phases"].map(func(p: Dictionary) -> int: return int(p["start"]))
+    if not starts.has(int(c["announce_day"])) or not starts.has(int(c["landing_day"])):
+        errors.append("crisis: there must be a phase starting on announce_day and one on landing_day")
+    for res_id in c["economy"].get("crash_weight", {}):
+        if not data["resources"].has(res_id):
+            errors.append("crisis: crash_weight for unknown resource '%s'" % res_id)
+    if float(c["economy"]["min_mult"]) <= 0.0 or float(c["economy"]["max_mult"]) < 1.0:
+        errors.append("crisis: economy min_mult must be above 0 and max_mult at least 1")
+    if int(c["access"]["trade_cap_min"]) < 1 or float(c["access"]["trade_cap_halving_days"]) <= 0.0:
+        errors.append("crisis: trade_cap_min must be at least 1 and trade_cap_halving_days above 0")
+    var types: Array = c["aliens"].get("types", [])
+    if types.is_empty():
+        errors.append("crisis: no alien types")
+    var ids: Array = []
+    for t in types:
+        ids.append(str(t.get("id", "")))
+        if int(t.get("hp", 0)) < 1 or int(t.get("attack", 0)) < 1 or int(t.get("speed", 0)) < 1:
+            errors.append("crisis: alien %s needs hp, attack and speed of at least 1" % t.get("id", "?"))
+    if not ids.has("crawler"):
+        errors.append("crisis: the first creature is a crawler, so a 'crawler' type is needed")
     return errors
 
 

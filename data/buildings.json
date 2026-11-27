@@ -13,5 +13,10 @@
   {"id": "workshop",       "name": "Workshop",       "symbol": "Wk", "kind": "factory", "placeholder": true, "batches_per_day": 4, "build_cost": 500000,  "upkeep_per_day": 2500, "inputs": {"steel": 1, "copper_ingot": 1}, "outputs": {"tools": 2}, "cycle_days": 1},
   {"id": "machine_shop",   "name": "Machine shop",   "symbol": "MS", "kind": "factory", "placeholder": true, "batches_per_day": 2, "build_cost": 1000000, "upkeep_per_day": 3000, "inputs": {"steel": 3, "copper_ingot": 2, "coal": 1}, "outputs": {"machinery": 1}, "cycle_days": 1},
 
+  {"id": "munitions_works", "short_name": "Munitions", "name": "Munitions works", "symbol": "Mu", "kind": "factory", "batches_per_day": 3, "build_cost": 500000, "upkeep_per_day": 2000, "inputs": {"steel": 1, "coal": 2}, "outputs": {"munitions": 6}, "cycle_days": 1},
+
+  {"id": "mg_nest",        "short_name": "MG nest", "name": "Machine-gun nest", "symbol": "MG", "kind": "defense", "build_cost": 200000, "upkeep_per_day": 1200, "inputs": {}, "outputs": {}, "range": 2, "damage": 30, "ammo": {"munitions": 1}, "health": 160, "cycle_days": 1},
+  {"id": "field_battery",  "short_name": "Battery", "name": "Field battery",    "symbol": "FB", "kind": "defense", "build_cost": 750000, "upkeep_per_day": 3000, "inputs": {}, "outputs": {}, "range": 4, "damage": 80, "ammo": {"munitions": 3}, "health": 240, "cycle_days": 1},
+
   {"id": "warehouse",      "name": "Warehouse",      "symbol": "Wh", "kind": "storage", "build_cost": 80000, "upkeep_per_day": 1000, "inputs": {}, "outputs": {}, "capacity": 500, "cycle_days": 1}
 ]

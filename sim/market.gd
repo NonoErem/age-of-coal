@@ -1,6 +1,8 @@
 extends RefCounted
 ## Market model, following Kenji's draft:
-##   price = base * trend * shock * pressure
+##   price = base * trend * shock * rival * crisis * pressure
+## The crisis (sim/crisis.gd) also widens the spread, raises the fee, thins the market and caps how many units of a good
+## you can trade in a day (shipping limits). Those values are set every day from the calendar and are not saved.
 ## Money is returned as integer cents. Floats are used only inside the model.
 ## Every buy and sell goes through _simulate(), so spread, fee and pressure live in one place.
 ##
@@ -18,6 +20,12 @@ var pressure: Dictionary = {}
 var shock_mult: Dictionary = {}    # product of all running market events, set by MarketEvents
 var rival_mult: Dictionary = {}    # lasting price shift from weakened or bankrupt rival companies (see companies.gd)
 var depth_mult: Dictionary = {}    # how much deeper the rivals make each market (1.0 = none)
+var crisis_mult: Dictionary = {}   # the invasion's effect on each price (1.0 = none), set by Crisis.apply_market
+var crisis_depth: float = 1.0      # the invasion thins every market
+var extra_spread: float = 0.0      # added to the normal spread during the crisis
+var extra_fee: float = 0.0
+var volatility_mult: float = 1.0   # panic: prices wander more once the crisis is announced
+var trade_cap: int = -1            # units of each good you may trade per day; -1 = no limit
 var presence: Dictionary = {}      # smoothed units per day the company puts into this market
 var volume_today: Dictionary = {}  # units bought or sold on the market since the last day change
 
@@ -31,13 +39,29 @@ func _init(resources: Dictionary, balance: Dictionary) -> void:
         shock_mult[id] = 1.0
         rival_mult[id] = 1.0
         depth_mult[id] = 1.0
+        crisis_mult[id] = 1.0
         presence[id] = 0.0
         volume_today[id] = 0.0
 
 
 func depth(id: String) -> float:
     var def: Dictionary = _resources[id]
-    return float(def.get("depth", _balance["default_depth"])) * float(depth_mult[id])
+    return float(def.get("depth", _balance["default_depth"])) * float(depth_mult[id]) * crisis_depth
+
+
+func spread() -> float:
+    return float(_balance["spread"]) + extra_spread
+
+
+func fee() -> float:
+    return float(_balance["fee"]) + extra_fee
+
+
+## Units of this good you can still trade today (-1 = no limit).
+func trade_room(id: String) -> int:
+    if trade_cap < 0:
+        return -1
+    return maxi(0, trade_cap - int(round(float(volume_today[id]))))
 
 
 ## Units per day the whole market trades (everyone, not just you).
@@ -53,13 +77,13 @@ func base_price(id: String) -> float:
 
 ## Current mid price in cents (before spread and fee).
 func spot_price(id: String) -> float:
-    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id]) * float(pressure[id])
+    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id]) * float(crisis_mult[id]) * float(pressure[id])
 
 
 ## Price without the player's own trading pressure. Contracts are priced from this,
 ## so buying or selling heavily cannot inflate what a contract pays.
 func reference_price(id: String) -> float:
-    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id])
+    return base_price(id) * float(trend[id]) * float(shock_mult[id]) * float(rival_mult[id]) * float(crisis_mult[id])
 
 
 ## Your slice of this market right now (0.01 = 1%).
@@ -109,13 +133,13 @@ func _commit(id: String, qty: int, is_buy: bool) -> int:
 
 
 func _simulate(id: String, qty: int, is_buy: bool) -> Dictionary:
-    var spread: float = float(_balance["spread"])
-    var fee: float = float(_balance["fee"])
+    var sp: float = spread()
+    var fe: float = fee()
     var side: float
     if is_buy:
-        side = (1.0 + spread) * (1.0 + fee)
+        side = (1.0 + sp) * (1.0 + fe)
     else:
-        side = (1.0 - spread) * (1.0 - fee)
+        side = (1.0 - sp) * (1.0 - fe)
     var d: float = depth(id)
     var volume: float = market_volume(id)
     var unit_base: float = reference_price(id)
@@ -146,7 +170,7 @@ func set_shock(id: String, mult: float) -> void:
 ## Resources are visited in file order so the same seed always gives the same result.
 func advance_day(rng: RandomNumberGenerator, net_produced: Dictionary = {}) -> void:
     var recovery: float = float(_balance["pressure_recovery"])
-    var vol: float = float(_balance["trend_volatility"])
+    var vol: float = float(_balance["trend_volatility"]) * volatility_mult
     var reversion: float = float(_balance["trend_reversion"])
     var t_min: float = float(_balance["trend_min"])
     var t_max: float = float(_balance["trend_max"])

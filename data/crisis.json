@@ -1,0 +1,69 @@
+{
+  "enabled": true,
+  "start_date": [1925, 1, 1],
+  "announce_day": 330,
+  "landing_day": 390,
+  "year_days": 365,
+  "phases": [
+    {"id": "peace",    "name": "Peace",    "start": 1,   "color": "#8a9a6e", "text": "Business as usual."},
+    {"id": "warning",  "name": "Warning",  "start": 330, "color": "#c9a227", "text": "Objects have been seen falling from the sky. Markets panic."},
+    {"id": "invasion", "name": "Invasion", "start": 390, "color": "#c0622b", "text": "The creatures have landed. Trade begins to break down."},
+    {"id": "siege",    "name": "Siege",    "start": 570, "color": "#9b3b2a", "text": "The countryside is overrun. Shipping is scarce and dear."},
+    {"id": "collapse", "name": "Collapse", "start": 800, "color": "#5a2a2a", "text": "The world market is nearly gone. Hold on to what you can make yourself."}
+  ],
+
+  "economy": {
+    "warning_drop": 0.05,
+    "drop_per_year": 0.35,
+    "min_mult": 0.4,
+    "max_mult": 2.5,
+    "panic_volatility": 2.0,
+    "crash_weight": {
+      "coal": 0.5, "iron_ore": 0.8, "limestone": 1.0, "copper_ore": 1.0,
+      "coke": 0.6, "pig_iron": 0.8, "copper_ingot": 1.1, "steel": 0.4,
+      "tools": 0.7, "rails": 1.4, "machinery": 1.3, "munitions": -1.2
+    }
+  },
+
+  "access": {
+    "warning_spread": 0.01,
+    "spread_per_year": 0.10,
+    "max_extra_spread": 0.30,
+    "fee_per_year": 0.03,
+    "max_extra_fee": 0.09,
+    "depth_loss_per_year": 0.4,
+    "min_depth_mult": 0.25,
+    "trade_cap_start": 300,
+    "trade_cap_halving_days": 180,
+    "trade_cap_min": 5,
+    "contract_loss_per_year": 0.6,
+    "min_contract_mult": 0.1
+  },
+
+  "rivals": {
+    "burden_per_year": 3.0,
+    "size_shield": 0.7,
+    "revive_after_landing": false
+  },
+
+  "damage": {
+    "health": {"extractor": 100, "factory": 120, "storage": 90, "defense": 150},
+    "repair_rate": 0.5
+  },
+
+  "aliens": {
+    "first_wave": 1,
+    "spawn_base": 0.10,
+    "spawn_growth_per_day": 0.0015,
+    "spawn_max_per_day": 3.0,
+    "max_alive": 50,
+    "hp_growth_per_year": 0.4,
+    "attack_growth_per_year": 0.25,
+    "roam_days": 12,
+    "types": [
+      {"id": "crawler",  "name": "Crawler",  "hp": 40,  "attack": 6,  "speed": 2, "weight": 1.0,  "weight_per_year": -0.4, "text": "Fast and fragile. Chews through a site slowly if left alone."},
+      {"id": "strider",  "name": "Strider",  "hp": 120, "attack": 14, "speed": 1, "weight": 0.15, "weight_per_year": 0.5,  "text": "A tall, slow walker. Takes real firepower to bring down."},
+      {"id": "colossus", "name": "Colossus", "hp": 400, "attack": 35, "speed": 1, "weight": -0.3, "weight_per_year": 0.35, "text": "Seen only after the first year. A single one can level a works."}
+    ]
+  }
+}

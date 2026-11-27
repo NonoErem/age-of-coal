@@ -18,22 +18,25 @@ Godot 4.3+. Open this folder in the Godot project manager and press F5 for the d
     godot --headless --path . -s tests/companies_test.gd  # rival companies: market effects, bankruptcy, buying, offers, flips, saving
     godot --headless --path . -s tests/survey_test.gd     # surveys: areas, depth levels, hidden deposits, costs, saving
     godot --headless --path . -s tests/rules_test.gd      # automation rules: keep/sell, limits, caps, conflicts, churn guard, saving
+    godot --headless --path . -s tests/crisis_test.gd     # the invasion: calendar, crash, shipping limits, creatures, defenses, damage, repairs, saving
     godot --headless --path . -s tests/ui_smoke_test.gd   # drives the real screen like a player
     godot --headless --path . -s tests/sam_contract_probe.gd  # informational: buy-to-deliver profit per resource
     godot --headless --path . -s tests/sam_event_probe.gd     # informational: profit from speculating on an announced event
     godot --headless --path . -s tests/sam_offer_probe.gd     # informational: how the contract board behaves over 600 days
     godot --headless --path . -s tests/rival_probe.gd         # informational: 6 seeds x 1500 days, how often rivals weaken or fail on their own
     godot --headless --path . -s tests/rival_tuning.gd        # tuning tool: compares rival settings (natural busts, does one failure spread?)
+    godot --headless --path . -s tests/crisis_probe.gd        # informational: a small base through 1200 days, undefended and defended
+    godot --headless --path . -s tests/crisis_rival_tuning.gd # tuning tool: which rivals fail when during the invasion, by size
 
 Exit code 0 means every check passed.
 
 ## Layout
 
-- `data/`   balance.json, resources.json, buildings.json, map.json, contracts.json, events.json, companies.json. Tune numbers here, no code changes. Money is in integer cents.
+- `data/`   balance.json, resources.json, buildings.json, map.json, contracts.json, events.json, companies.json, crisis.json. Tune numbers here, no code changes. Money is in integer cents.
 - `sim/`    pure game logic (data loader, market, market events, rival companies, production, contracts, game state). It never touches UI or scenes.
 - `game/`   main screen (coordinator), the tile map view and the save manager.
 - `ui/`     Iris's interface: style, top bar, build bar, inspector, event log, Market / Production / Contracts / Orders / Rivals / News panels, price chart.
-- `art/`    the pictures, as SVG: buildings/, deposits/, resources/ (see Art below).
+- `art/`    the pictures, as SVG: buildings/, deposits/, resources/, aliens/ (see Art below).
 - `tools/`  screenshot tool and scenarios, the art contact sheet, a window-size check (these need a display, e.g. xvfb), and make_art.py (the art generator).
 - `docs/`   screenshots of the interface.
 - `tests/`  headless regression tests, including Sam's exploit checks.
@@ -220,7 +223,7 @@ Northern Rail & Engineering (rails, machinery) and Midland Tool & Die (tools). E
   size 1.0 or less. A company you own grows too, but slower, because you take half its profit. Typical result after 300 days: average size x1.6 to x2.1 and about
   three busts per 1000 days across all eight, with no cascade. Sam's check: a healthy Blackwater held 300 days returns about 88% of its price (payback around 240 days),
   so buying a leader is a slow bet, not a free ride. Tunables: `growth_reinvest`, `growth_max_scale`, `min_scale`, `scale_decay`, `restart_scale`, `take_scale_cap`.
-- Saves: version 9 (older saves are refused, as before). Tests that count exact money turn rivals' offer-taking off.
+- Saves: version 9 at the time (now 10, see The invasion). Tests that count exact money turn rivals' offer-taking off.
 
 ## Surveys (map.json "survey", sim/survey.gd, Survey buttons in the build bar)
 
@@ -247,6 +250,69 @@ Standing orders are a fixed amount for a number of days. Rules react to what you
 - **Churn guard (Sam):** a keep level above the sell level for the same good would buy and sell the same units every day and lose the spread each time, so it is refused
   (paused rules do not count; resuming one is checked). One rule of each kind per good, at most 12 rules.
 - Order of the day: production, upkeep, standing orders, rules, rivals, market. Tunables in balance.json "rules": `max_rules`, `max_level`, `max_per_day`.
+
+## The invasion (crisis.json, sim/crisis.gd, the time bar)
+
+A fixed timeline, the same in every game. Nobody knows it is coming until the announcement.
+
+| Phase | From | What happens |
+|---|---|---|
+| Peace | day 1 (1 Jan 1925) | business as usual |
+| Warning | day 330 | telegram: objects fall from the sky. Markets panic: prices swing twice as much, spread +1%, prices start to sag |
+| Invasion | day 390 | telegram: the first creature lands at the edge of your map. Shipping limits start, the crash begins |
+| Siege | day 570 | (a name on the timeline: the pressure simply keeps growing) |
+| Collapse | day 800 | |
+
+There is no end. Everything grows with "crisis years" since the landing, until the company cannot hold on.
+
+- **Time bar** (under the top bar): date, phase, the timeline with a marker for today, and the threat
+  (days to the landing, then creatures on the map and the shipping limit). Before the announcement the future is a blank "?".
+  The announcement and the first landing come as telegrams that pause the game.
+- **The crash.** Each price is multiplied by `1 - (5% + 35% a year) x crash_weight` (limits 0.4 to 2.5). Civilian goods fall hardest
+  (rails 1.4, machinery 1.3), war goods hold (steel 0.4, coal 0.5) and munitions (weight -1.2) get dearer.
+- **The world market closes.** From the landing:
+  - you may trade at most 300 units of each good a day, halving every 180 days, never below 5. Buying and selling count together. Rules and standing orders are clipped to it and say so;
+  - the spread widens (+10% a year, at most +30%) and the fee rises (+3% a year, at most +9%);
+  - markets thin out (depth -40% a year, down to 25%);
+  - contract offers arrive less often (-60% a year, never below 10%).
+  The Market tab shows all of it for the selected good.
+- **Rivals.** Nobody expands after the landing. Each pays a crisis burden of `overhead x 3.0 x years x size^0.3`, which is lighter, size for size,
+  on big companies. A company that fails after the landing is not restarted by investors; you can still buy it.
+  Measured (`tests/crisis_rival_tuning.gd`): small ones fail within about a year, mid-sized ones within 1.5 years, the biggest last 2 to 3 years or more.
+- **Creatures** (their own random stream, saved: reloading a game never changes what comes). They land on the edge of the map,
+  0.1 a day at first plus 0.0015 a day per day since the landing (at most 3 a day, 50 alive). Each walks to your nearest building and attacks it:
+
+  | Kind | Health | Damage a day | Speed | When |
+  |---|---|---|---|---|
+  | Crawler | 40 | 6 | 2 tiles | from the start, rarer later |
+  | Strider | 120 | 14 | 1 tile | more common every month |
+  | Colossus | 400 | 35 | 1 tile | after about 10 months |
+
+  Health grows 40% and damage 25% per crisis year. With nothing of yours on the map they wander off after 12 days.
+  Nothing can be built on a tile a creature stands on.
+- **Damage.** Buildings have health (mines 100, factories 120, warehouses 90, defenses their own). A building that has lost any health stops working
+  and pays idle upkeep until repaired. Its damage bar appears on the map only once it has been hit. Repair from the inspector: 50% of the
+  build price for full damage, in proportion for less. At 0 it is destroyed: the tile is freed (a mine's deposit stays), and a destroyed
+  warehouse loses the goods that no longer fit.
+- **Defenses** (new group in the build bar, need munitions):
+
+  | | Cost | Upkeep | Reach | Damage a day | Ammunition per day of firing | Health |
+  |---|---|---|---|---|---|---|
+  | Machine-gun nest | $2,000 | $12 | 2 tiles | 30 | 1 munitions | 160 |
+  | Field battery | $7,500 | $30 | 4 tiles | 80 | 3 munitions | 240 |
+
+  Each fires at the nearest creature in reach, first thing each day. No munitions, no fire (said once in the log). A stopped defense does not fire.
+  A damaged defense keeps firing: it is built to take hits. Placed on the edge of a works, they draw the attacks.
+  The **Cover** button on the map (key C) shows the reach of every defense; the inspector says how many defenses cover a building.
+- **Munitions**: a new good (base $25), made by the **Munitions works** (1 steel + 2 coal -> 6 munitions, 3 batches a day) or bought while shipping allows.
+  The Army depot asks for it in contracts.
+- **Sam's checks** (`tests/crisis_test.gd`): in the first 120 days of the invasion no building loses more than 45 health in a day and none goes from full to nothing in one day;
+  reloading a save gives the same creatures and the same damage; repairs cost half the build price for full damage, so repairing beats nothing but defending.
+  `tests/crisis_probe.gd`: an undefended small base is gone about 3 months after the landing; the same base with 6 nests and a battery, kept in munitions and repaired,
+  holds until the collapse phase (about day 750 to 900).
+- `"enabled": false` in crisis.json gives back the game without the invasion.
+- Order of a day: production, upkeep, standing orders, rules, rivals, market, then the new day: crisis (defenses fire, creatures move and attack, new ones land), events, contracts.
+- Saves: version 10 (older saves are refused, as before).
 
 ## Not built yet
 

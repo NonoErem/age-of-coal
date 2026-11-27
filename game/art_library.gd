@@ -20,6 +20,11 @@ static func deposit(resource_id: String) -> Texture2D:
 
 
 ## Small crisp icons for panels. px is the size on screen.
+## Creature picture for the map (crawler, strider, colossus).
+static func alien(type_id: String, px: int = 128) -> Texture2D:
+    return _load("aliens", type_id, px, px >= 64)
+
+
 static func building_icon(id: String, px: int = 28) -> Texture2D:
     return _load("buildings", id, px, false)
 
