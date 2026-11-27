@@ -268,6 +268,10 @@ There is no end. Everything grows with "crisis years" since the landing, until t
 - **Time bar** (under the top bar): date, phase, the timeline with a marker for today, and the threat
   (days to the landing, then creatures on the map and the shipping limit). Before the announcement the future is a blank "?".
   The announcement and the first landing come as telegrams that pause the game.
+- **Night falls.** From the announcement the whole game screen slowly darkens to a dusky blue, as if night were falling on the world:
+  a little by the landing (12%), full night (50%) after 1.5 crisis years, then it stays there. The menu and the telegrams stay bright.
+  It is one multiply layer (ui/night_overlay.gd) that never takes the mouse; tune or switch it off in crisis.json "night"
+  (`max` is capped at 0.8 by the data check, beyond that text is unreadable; remove the section for no night).
 - **The crash.** Each price is multiplied by `1 - (5% + 35% a year) x crash_weight` (limits 0.4 to 2.5). Civilian goods fall hardest
   (rails 1.4, machinery 1.3), war goods hold (steel 0.4, coal 0.5) and munitions (weight -1.2) get dearer.
 - **The world market closes.** From the landing:

@@ -120,6 +120,32 @@ static func date_text(state, day: int) -> String:
     return "%d %s %d" % [d[2], MONTHS[int(d[1]) - 1], d[0]]
 
 
+# ---------- night ----------
+
+## How dark the world has grown, 0 (day) to night.max. Starts at the announcement, dusk by the landing,
+## full night after years_to_full crisis years. The interface multiplies itself by night_tint().
+static func night(state, day: int = -1) -> float:
+    if not announced(state, day):
+        return 0.0
+    var n: Dictionary = cfg(state).get("night", {})
+    if n.is_empty():
+        return 0.0
+    var d: int = state.day if day < 0 else day
+    var dusk: float = float(n["dusk_at_landing"])
+    if not landed(state, day):
+        var span: float = float(landing_day(state) - announce_day(state))
+        return dusk * float(d - announce_day(state)) / maxf(1.0, span)
+    var t: float = clampf(years(state, day) / float(n["years_to_full"]), 0.0, 1.0)
+    return dusk + (float(n["max"]) - dusk) * t
+
+
+static func night_tint(state, day: int = -1) -> Color:
+    var n: Dictionary = cfg(state).get("night", {})
+    if n.is_empty():
+        return Color.WHITE
+    return Color.WHITE.lerp(Color.html(str(n["color"])), night(state, day))
+
+
 # ---------- economy ----------
 
 static func price_mult(state, res: String, day: int = -1) -> float:

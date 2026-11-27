@@ -297,6 +297,10 @@ static func _validate_crisis(data: Dictionary) -> Array:
         errors.append("crisis: economy min_mult must be above 0 and max_mult at least 1")
     if int(c["access"]["trade_cap_min"]) < 1 or float(c["access"]["trade_cap_halving_days"]) <= 0.0:
         errors.append("crisis: trade_cap_min must be at least 1 and trade_cap_halving_days above 0")
+    if c.has("night"):
+        var nt: Dictionary = c["night"]
+        if float(nt.get("max", 0.0)) < 0.0 or float(nt.get("max", 0.0)) > 0.8 or float(nt.get("dusk_at_landing", 0.0)) > float(nt.get("max", 0.0)) or float(nt.get("years_to_full", 0.0)) <= 0.0:
+            errors.append("crisis: night needs 0 <= dusk_at_landing <= max <= 0.8 (beyond that the screen is unreadable) and years_to_full above 0")
     var types: Array = c["aliens"].get("types", [])
     if types.is_empty():
         errors.append("crisis: no alien types")
