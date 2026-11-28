@@ -194,8 +194,8 @@ func _update_preview() -> void:
         if held < qty * days:
             note = "You hold %d %s, enough for %d days at this rate. Production or purchases must cover the rest." % [held, name_text, int(held / maxi(1, qty))]
     else:
-        note = "You have room for %d more units." % state.free_space()
-        if qty > state.free_space():
+        note = ("You have room for %d more units." if state.in_yard(id) else "Your granaries have room for %d more.") % state.room_for(id)
+        if qty > state.room_for(id):
             note += " That is less than one day's order."
             warn = true
     var lim: int = limit_cents()

@@ -23,7 +23,7 @@ func setup() -> void:
     add_child(center)
     var panel := PanelContainer.new()
     panel.custom_minimum_size = Vector2(520, 0)
-    panel.add_theme_stylebox_override("panel", Style.box(Color.html("#f1e6c8"), Style.INK, 2, 2, 18))
+    panel.add_theme_stylebox_override("panel", Style.box(Color.html("#d9cdaa"), Style.INK, 2, 2, 18))
     center.add_child(panel)
     var box := VBoxContainer.new()
     box.add_theme_constant_override("separation", 10)

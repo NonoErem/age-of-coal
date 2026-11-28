@@ -145,12 +145,12 @@ func _initialize() -> void:
     scene.select_tile(cx, cy)
 
     print("Storage, stopping and demolishing")
-    check(scene.top_bar.storage_label.text.begins_with("Storage ") and scene.top_bar.storage_label.text.ends_with("/ 250"), "the top bar shows how much room you have (%s)" % scene.top_bar.storage_label.text)
+    check(scene.top_bar.storage_label.text.begins_with("Store ") and scene.top_bar.storage_label.text.ends_with("/250"), "the top bar shows how much room you have (%s)" % scene.top_bar.storage_label.text)
     var money_pre: int = s.money_cents
     scene.set_tool("warehouse")
     scene.map_clicked(12, 7)
     scene.clear_tool()
-    check(s.capacity() == 750 and scene.top_bar.storage_label.text.ends_with("/ 750") and money_pre - s.money_cents == 80000, "a warehouse placed from the build bar adds 500 units")
+    check(s.capacity() == 750 and scene.top_bar.storage_label.text.ends_with("/750") and money_pre - s.money_cents == 80000, "a warehouse placed from the build bar adds 500 units")
     scene.market_panel.select_resource("steel")
     scene.market_panel.qty_box.value = 10000
     check(scene.market_panel.buy_button.disabled and "No room" in scene.market_panel.buy_preview.text, "the market warns when a purchase would not fit")

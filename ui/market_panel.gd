@@ -232,7 +232,7 @@ func _update_preview() -> void:
 
     var cost: int = m.quote_buy(id, qty)
     var up: float = (m.pressure_after(id, qty, true) / p0 - 1.0) * 100.0
-    var has_room: bool = qty <= state.free_space()
+    var has_room: bool = qty <= state.room_for(id)
     var ship: int = m.trade_room(id)
     var can_ship: bool = ship < 0 or qty <= ship
     var can_buy: bool = cost <= state.money_cents and has_room and can_ship
@@ -240,7 +240,7 @@ func _update_preview() -> void:
     if not can_ship:
         why_not = ". Shipping limit: only %d more today" % ship
     elif not has_room:
-        why_not = ". No room: only %d free (warehouses add more)" % state.free_space()
+        why_not = (". No room: only %d free (warehouses add more)" if state.in_yard(id) else ". Granaries full: only %d free (build a granary; food keeps nowhere else)") % state.room_for(id)
     elif cost > state.money_cents:
         why_not = ". Not enough cash"
     buy_preview.text = "Buy %d: %s (avg %s), price rises %.1f%%%s" % [qty, Style.money(cost), Style.money(int(float(cost) / qty)), up, why_not]

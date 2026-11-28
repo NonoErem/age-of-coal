@@ -28,6 +28,15 @@
   "autosave_every_days": 10,
   "base_storage": 250,
   "demolish_refund": 0.3,
+  "people": {
+    "wage_share": 0.8,
+    "ration": 0.1,
+    "spoil_per_day": 0.005,
+    "hunger_leave": 0.25,
+    "arrivals_share": 0.15,
+    "arrivals_min": 2,
+    "base_food_storage": 0
+  },
   "rules": {
     "max_rules": 12,
     "max_level": 5000,

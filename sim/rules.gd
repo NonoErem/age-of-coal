@@ -135,7 +135,7 @@ static func _execute(state, r: Dictionary) -> String:
         if need <= 0:
             return "idle"
         n = mini(need, cap)
-        var room: int = state.free_space()
+        var room: int = state.room_for(res)
         if room < n:
             n = room
             result = "partial_room" if n > 0 else "no_room"

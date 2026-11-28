@@ -489,6 +489,16 @@ func _draw_building(b: Dictionary, font: Font) -> void:
     var dot: Vector2 = r.position + Vector2(r.size.x - 3, 3)
     draw_circle(dot, 5.0, Style.INK)
     draw_circle(dot, 3.5, _status_color(str(b["status"])))
+    # Short of workers: a little figure in the top left corner.
+    var crew: int = int(def.get("crew", 0))
+    if crew > 0 and int(b.get("crew_yours", 0)) + int(b.get("crew_hired", crew)) < crew and not bool(b.get("stopped", false)):
+        var f: Vector2 = r.position + Vector2(5, 4)
+        draw_rect(Rect2(f - Vector2(4, 2), Vector2(8, 13)), Style.WARN)
+        draw_rect(Rect2(f - Vector2(4, 2), Vector2(8, 13)), Style.INK, false, 1.0)
+        draw_circle(f + Vector2(0, 1.5), 1.8, Style.INK)
+        draw_line(f + Vector2(0, 3.5), f + Vector2(0, 7.5), Style.INK, 1.5)
+        draw_line(f + Vector2(-2, 10), f + Vector2(0, 7.5), Style.INK, 1.2)
+        draw_line(f + Vector2(2, 10), f + Vector2(0, 7.5), Style.INK, 1.2)
     # The damage bar only appears once the building has been hit.
     if Crisis.is_damaged(state, b):
         var frac: float = clampf(float(b["health"]) / float(Crisis.max_health(state, b)), 0.0, 1.0)
@@ -518,11 +528,15 @@ func _draw_cover() -> void:
     var sel: Dictionary = state.building_at(selected.x, selected.y) if selected.x >= 0 else {}
     for b in state.buildings:
         var def: Dictionary = defs[b["type"]]
-        if str(def["kind"]) != "defense":
+        if str(def["kind"]) != "defense" and str(def["kind"]) != "light":
+            continue
+        if str(def["kind"]) == "light":
+            if show_cover or (not sel.is_empty() and int(sel["uid"]) == int(b["uid"])):
+                _range_box(int(b["x"]), int(b["y"]), int(def["range"]), Color(Style.WARN, 0.06), Color(Style.WARN, 0.6))
             continue
         if show_cover or (not sel.is_empty() and int(sel["uid"]) == int(b["uid"])):
             _range_box(int(b["x"]), int(b["y"]), int(def["range"]), Color(Style.SELECT, 0.08), Color(Style.SELECT, 0.6))
-    if tool_id != "" and hover.x >= 0 and str(defs[tool_id]["kind"]) == "defense":
+    if tool_id != "" and hover.x >= 0 and (str(defs[tool_id]["kind"]) == "defense" or str(defs[tool_id]["kind"]) == "light"):
         _range_box(hover.x, hover.y, int(defs[tool_id]["range"]), Color(Style.GOOD, 0.12), Style.GOOD)
 
 
@@ -578,6 +592,8 @@ static func _status_color(status: String) -> Color:
             return Style.BAD
         "firing":
             return Style.GOOD
-        "no_ammo":
+        "no_ammo", "no_supplies", "unsafe", "no_crew":
             return Style.WARN
+        "lit", "housing":
+            return Style.GOOD
     return Style.PAPER_DEEP

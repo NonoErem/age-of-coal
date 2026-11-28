@@ -201,6 +201,32 @@ static func validate(data: Dictionary) -> Array:
             for res_id in bd.get("ammo", {}):
                 if not resources.has(res_id):
                     errors.append("building %s: unknown ammunition '%s'" % [id, res_id])
+        if int(bd.get("crew", -1)) < 0:
+            errors.append("building %s: crew must be 0 or more" % id)
+        if bd.get("kind", "") == "shelter" and int(bd.get("housing", 0)) < 1:
+            errors.append("building %s: a shelter needs housing of at least 1" % id)
+        if bd.get("kind", "") == "granary" and int(bd.get("food_capacity", 0)) < 1:
+            errors.append("building %s: a granary needs a food_capacity of at least 1" % id)
+        if bd.get("kind", "") == "light":
+            if int(bd.get("range", 0)) < 1 or int(bd.get("crew", 0)) < 1:
+                errors.append("building %s: a searchlight needs a range and a crew of at least 1" % id)
+            for res_id in bd.get("supplies", {}):
+                if not resources.has(res_id):
+                    errors.append("building %s: unknown supply '%s'" % [id, res_id])
+    var pp: Dictionary = data["balance"].get("people", {})
+    for key in ["wage_share", "ration", "spoil_per_day", "hunger_leave", "arrivals_share", "arrivals_min", "base_food_storage"]:
+        if not pp.has(key):
+            errors.append("balance people: '%s' is missing" % key)
+    if pp.has("wage_share") and (float(pp["wage_share"]) < 0.0 or float(pp["wage_share"]) > 1.0):
+        errors.append("balance people: wage_share must be between 0 and 1")
+    if pp.has("ration") and float(pp["ration"]) <= 0.0:
+        errors.append("balance people: ration must be above 0 (people eat)")
+    if pp.has("spoil_per_day") and (float(pp["spoil_per_day"]) < 0.0 or float(pp["spoil_per_day"]) > 0.2):
+        errors.append("balance people: spoil_per_day must be between 0 and 0.2")
+    if pp.has("hunger_leave") and (float(pp["hunger_leave"]) <= 0.0 or float(pp["hunger_leave"]) > 1.0):
+        errors.append("balance people: hunger_leave must be above 0 and at most 1")
+    if not resources.has("food"):
+        errors.append("resources: food is missing (your people eat it)")
     var start: Dictionary = data["balance"].get("start_inventory", {})
     for res_id in start:
         if not resources.has(res_id):
@@ -297,6 +323,17 @@ static func _validate_crisis(data: Dictionary) -> Array:
         errors.append("crisis: economy min_mult must be above 0 and max_mult at least 1")
     if int(c["access"]["trade_cap_min"]) < 1 or float(c["access"]["trade_cap_halving_days"]) <= 0.0:
         errors.append("crisis: trade_cap_min must be at least 1 and trade_cap_halving_days above 0")
+    if c.has("labour"):
+        var lb: Dictionary = c["labour"]
+        for key in ["drop_at_landing", "drop_per_year", "max_wage_drop", "exposed_share", "max_discount", "repair_labour_share", "build_labour_share", "hire_protected_at_landing", "hire_protected_per_year", "hire_protected_min", "hire_exposed_at_landing", "hire_exposed_per_year", "hire_exposed_min"]:
+            if not lb.has(key):
+                errors.append("crisis labour: '%s' is missing" % key)
+        if errors.is_empty():
+            for key in ["exposed_share", "repair_labour_share", "build_labour_share", "hire_protected_at_landing", "hire_protected_min", "hire_exposed_at_landing", "hire_exposed_min"]:
+                if float(lb[key]) < 0.0 or float(lb[key]) > 1.0:
+                    errors.append("crisis labour: %s must be between 0 and 1" % key)
+            if float(lb["max_discount"]) > 0.95 or float(lb["max_wage_drop"]) > 0.95 or float(lb["max_discount"]) < 0.0:
+                errors.append("crisis labour: discounts must stay at or below 0.95 (work is never free)")
     if c.has("night"):
         var nt: Dictionary = c["night"]
         if float(nt.get("max", 0.0)) < 0.0 or float(nt.get("max", 0.0)) > 0.8 or float(nt.get("dusk_at_landing", 0.0)) > float(nt.get("max", 0.0)) or float(nt.get("years_to_full", 0.0)) <= 0.0:

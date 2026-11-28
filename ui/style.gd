@@ -2,13 +2,13 @@ extends RefCounted
 ## Look and feel, following Mara's direction: warm paper, ink outlines, soot-grey buildings.
 ## Also the small formatting helpers every screen shares.
 
-const DESK := Color("b8ab8e")
-const PAPER := Color("efe6d2")
-const PAPER_LIGHT := Color("faf5e8")
-const PAPER_DARK := Color("e2d6ba")
-const PAPER_DEEP := Color("cfc1a1")
-const INK := Color("2a2622")
-const INK_SOFT := Color("6e655a")
+const DESK := Color("8f8469")
+const PAPER := Color("cdc3aa")
+const PAPER_LIGHT := Color("ddd4bc")
+const PAPER_DARK := Color("bcb197")
+const PAPER_DEEP := Color("a89d80")
+const INK := Color("211e1a")
+const INK_SOFT := Color("4f483f")
 const SOOT := Color("3c3c3f")
 const FACTORY := Color("5b4636")
 const GOOD := Color("3d7a4b")

@@ -28,7 +28,8 @@
     "crash_weight": {
       "coal": 0.5, "iron_ore": 0.8, "limestone": 1.0, "copper_ore": 1.0,
       "coke": 0.6, "pig_iron": 0.8, "copper_ingot": 1.1, "steel": 0.4,
-      "tools": 0.7, "rails": 1.4, "machinery": 1.3, "munitions": -1.2
+      "tools": 0.7, "rails": 1.4, "machinery": 1.3, "munitions": -1.2,
+      "food": -0.4
     }
   },
 
@@ -53,8 +54,29 @@
     "revive_after_landing": false
   },
 
+  "labour": {
+    "wage_share": 0.8,
+    "drop_at_landing": 0.15,
+    "drop_per_year": 0.30,
+    "max_wage_drop": 0.75,
+    "exposed_share": 0.15,
+    "hire_protected_at_landing": 1.0,
+    "hire_protected_per_year": 0.3,
+    "hire_protected_min": 0.2,
+    "hire_exposed_at_landing": 0.7,
+    "hire_exposed_per_year": 0.4,
+    "hire_exposed_min": 0.05,
+    "max_discount": 0.9,
+    "repair_labour_share": 0.8,
+    "build_labour_share": 0.5
+  },
+
+  "darkness": {
+    "max_penalty": 0.5
+  },
+
   "damage": {
-    "health": {"extractor": 100, "factory": 120, "storage": 90, "defense": 150},
+    "health": {"extractor": 100, "factory": 120, "storage": 90, "defense": 150, "shelter": 110, "granary": 90, "light": 120},
     "repair_rate": 0.5
   },
 

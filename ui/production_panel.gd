@@ -50,7 +50,7 @@ func refresh() -> void:
     for b in state.buildings:
         var def: Dictionary = defs[b["type"]]
         var status: String = str(b["status"])
-        if not ["paused_missing_input", "depleted", "paused_storage_full", "damaged", "no_ammo"].has(status) and not (str(def["kind"]) == "defense" and int(b.get("health", 0)) < int(def.get("health", 0))):
+        if not ["paused_missing_input", "depleted", "paused_storage_full", "damaged", "no_ammo", "no_crew", "no_supplies", "unsafe"].has(status) and not (str(def["kind"]) == "defense" and int(b.get("health", 0)) < int(def.get("health", 0))):
             continue
         any = true
         attention_count += 1
@@ -63,6 +63,12 @@ func refresh() -> void:
             text = "%s (%d,%d): damaged, idle until repaired (%d health left)" % [str(def["name"]), int(b["x"]), int(b["y"]), int(b["health"])]
         elif status == "no_ammo":
             text = "%s (%d,%d): no ammunition" % [str(def["name"]), int(b["x"]), int(b["y"])]
+        elif status == "no_crew":
+            text = "%s (%d,%d): nobody to work it" % [str(def["name"]), int(b["x"]), int(b["y"])]
+        elif status == "no_supplies":
+            text = "%s (%d,%d): out of %s, dark" % [str(def["name"]), int(b["x"]), int(b["y"]), Style.names_text(def.get("supplies", {}).keys(), res)]
+        elif status == "unsafe":
+            text = "%s (%d,%d): no supplied defense reaches it, nobody will stay" % [str(def["name"]), int(b["x"]), int(b["y"])]
         elif str(def["kind"]) == "defense":
             text = "%s (%d,%d): damaged, %d health left" % [str(def["name"]), int(b["x"]), int(b["y"]), int(b["health"])]
         else:
@@ -170,6 +176,9 @@ func refresh() -> void:
                     color = Style.INK_SOFT
                 elif def2["kind"] == "factory":
                     text2 = "%d/%d batches" % [int(b["batches"]), int(def2.get("batches_per_day", 1))]
+                    if int(def2.get("crew", 0)) > int(b.get("crew_yours", 0)) + int(b.get("crew_hired", 0)):
+                        text2 += ", short crew"
+                        color = Style.WARN
                 else:
                     text2 = "running"
             "paused_missing_input":
@@ -189,6 +198,19 @@ func refresh() -> void:
             "no_ammo":
                 text2 = "no ammunition"
                 color = Style.WARN
+            "no_crew":
+                text2 = "no crew"
+                color = Style.WARN
+            "no_supplies":
+                text2 = "dark, no coal"
+                color = Style.WARN
+            "unsafe":
+                text2 = "unprotected"
+                color = Style.WARN
+            "lit":
+                text2 = "lit"
+            "housing":
+                text2 = "housing"
             _:
                 text2 = "new"
                 color = Style.INK_SOFT

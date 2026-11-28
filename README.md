@@ -110,7 +110,7 @@ To regenerate the screenshots: `xvfb-run -a godot --path . --rendering-driver op
 
 ## Storage and buildings
 
-- **Room:** the open yard holds 250 units (`base_storage`). Each warehouse adds 500 (`capacity` in buildings.json), costs +10% for every one you already own,
+- **Room:** (food excepted: it only keeps in granaries, see People and food) the open yard holds 250 units (`base_storage`). Each warehouse adds 500 (`capacity` in buildings.json), costs +10% for every one you already own,
   and goes on free ground. Everything counts the same: one unit of coal takes as much room as one unit of machinery.
 - **When it is full:** a mine or factory that cannot put its output anywhere stops with the status "storage full" (nothing is dug, the deposit is not used up,
   nothing piles up in secret) and restarts by itself when there is room. You cannot buy more than the free room. A recipe that makes more units than it uses
@@ -121,6 +121,32 @@ To regenerate the screenshots: `xvfb-run -a godot --path . --rendering-driver op
   Building and demolishing in a loop only loses money. A warehouse cannot be demolished while your stock would no longer fit without it.
   A mine that has run dry can be demolished, so it stops costing upkeep. The deposit stays on the map with what is left in it.
 - Contract offers never ask for more than you could store and buy.
+
+## People and food (balance.json "people", sim/people.gd)
+
+- **Crews.** Every building needs workers: mines 4 (quarry 3), coke oven 5, furnace 8, steelworks 10, smelter 6, rolling mill 8, workshop 6, machine shop 10,
+  munitions works 8, warehouse and granary 1, machine-gun nest 3, battery 5, searchlight 2, shelter 0 (`crew` in buildings.json).
+  **A short crew works in proportion**: 3 of 6 workers dig half as much, run half the batches (fractions carry to the next day), and a defense hits half as hard.
+  With nobody at all it stops ("no crew"). A little amber figure on the map marks buildings short of workers; the inspector says "Crew 4/5 (0 yours, 4 hired)".
+- **Two kinds of workers.** *Hired workers* come from the towns and are paid a wage. *Your people* live in your shelters, eat food and earn nothing.
+  Crews are filled from your people first (defenses and searchlights first, then in the order you built), then hired. Nobody lives with you before the landing:
+  until then every crew is fully hired and nothing changes from before.
+- **Upkeep** = maintenance (20% of the listed upkeep, never cheaper) + wages of the hired workers actually there (80% of the listed upkeep for a full hired crew,
+  lowered on safe ground after the landing, see the invasion). Idle buildings pay a quarter of that. A building fully run by your people pays only maintenance.
+- **Food** is a new good: base $4, a very deep market (depth 1,200), so at the start it is the easiest thing to buy. In the crisis it gets dearer (crash weight -0.4).
+  Nobody here makes it: it only comes from the market.
+- **Granary** (group *People*, $800, upkeep $4, crew 1): keeps 400 food. Food keeps nowhere else and never takes room in the yard or warehouses.
+  It spoils 0.5% a day (fractions carry over, so even a small stock rots slowly). A granary that is destroyed loses the food that no longer fits elsewhere.
+- **Shelter** (group *People*, $4,000, upkeep $15, no crew): houses 20 of your people, but only while a supplied defense reaches it (refugees will not stay on open ground).
+  After the landing, while there is room and food, refugees arrive: 15% of the empty places a day (at least 2). Each person eats 0.1 food a day.
+  With too little food a quarter of the unfed leave each day (said once). If a shelter is lost or no longer protected, those without a place leave at once.
+- The top bar shows "People 40/40 · Hired 5 · Food 36d" (its tooltip has the detail); the log tells you when the first refugees come, when the shelters are full,
+  when people go hungry and when they leave.
+- Sam's checks (`tests/people_test.gd`, 65 checks): before the landing everything is hired and costs exactly the listed upkeep; no granary, no food; food spoils;
+  a battery without munitions makes nobody safe; a short crew makes the right share over 20 days; no defense, no refugees; no food, no newcomers;
+  hunger and homelessness; a destroyed granary; searchlights cancel the dark penalty only in reach; an unmanned nest does not fire and uses no munitions; saves.
+  `tests/crisis_probe.gd` now runs a third base, REFUGE (the defended base plus 3 shelters, 2 granaries and 2 searchlights, kept in food and coal):
+  60 people come, crews stay full, and the first building falls on day 655 / 708 against 648 / 608 without them. It buys time, not survival.
 
 ## Art
 
@@ -310,13 +336,23 @@ There is no end. Everything grows with "crisis years" since the landing, until t
   The **Cover** button on the map (key C) shows the reach of every defense; the inspector says how many defenses cover a building.
 - **Munitions**: a new good (base $25), made by the **Munitions works** (1 steel + 2 coal -> 6 munitions, 3 batches a day) or bought while shipping allows.
   The Army depot asks for it in contracts.
+- **Darkness and searchlights** (crisis.json "darkness"). Defenses aim worse as night falls: damage x `1 - 0.5 x darkness`, where darkness goes from 0 at the announcement
+  to 1 in full night (1.5 years after the landing). A lit **Searchlight tower** (Defenses group, $3,000, upkeep $10, crew 2, reach 4 tiles, burns 1 coal a night)
+  cancels the penalty for every defense it reaches, in proportion to its own crew. Out of coal it goes dark and says so once. The **Cover** button also shows its reach (amber).
+- **Lights in the night** (ui/night_lights.gd): running buildings glow warm with lit windows above the night layer, so your works stay visible; idle, damaged
+  or unmanned ones stay dark. A lit searchlight lights the ground it covers.
+- **Hired labour after the landing** (crisis.json "labour"): of the empty places in a crew, hired workers fill 70% on open ground at the landing (-40 points a year,
+  never below 5%) and 100% on ground a supplied defense protects (-30 points a year, never below 20%). Those who come to safe ground work for less:
+  the wage drop of the year (15% at the landing, +30 points a year, at most 75%) x `(15% + 85% x safety)`; repairs get it on 80% of their price,
+  new buildings on 50% (land never). Safety comes only from defenses that are not stopped and have munitions (nest 0.5, battery 1.0, at most 1).
 - **Sam's checks** (`tests/crisis_test.gd`): in the first 120 days of the invasion no building loses more than 45 health in a day and none goes from full to nothing in one day;
   reloading a save gives the same creatures and the same damage; repairs cost half the build price for full damage, so repairing beats nothing but defending.
   `tests/crisis_probe.gd`: an undefended small base is gone about 3 months after the landing; the same base with 6 nests and a battery, kept in munitions and repaired,
   holds until the collapse phase (about day 750 to 900).
+- **Easier on the eyes.** The interface palette (ui/style.gd) was darkened and warmed: paper from #efe6d2 to #cdc3aa, the map sheet from near white (#faf5e8) to #ddd4bc, the desk from #b8ab8e to #8f8469, ink slightly darker for contrast. Every screen takes its colours from that file.
 - `"enabled": false` in crisis.json gives back the game without the invasion.
-- Order of a day: production, upkeep, standing orders, rules, rivals, market, then the new day: crisis (defenses fire, creatures move and attack, new ones land), events, contracts.
-- Saves: version 10 (older saves are refused, as before).
+- Order of a day: crews are filled, production, upkeep, standing orders, rules, rivals, market, then the new day: crisis (searchlights burn, defenses fire, creatures move and attack, new ones land), your people (food spoils, they eat, the hungry and homeless leave, newcomers arrive), crews for tomorrow, events, contracts.
+- Saves: version 11 (older saves are refused, as before).
 
 ## Not built yet
 

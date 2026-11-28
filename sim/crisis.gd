@@ -34,6 +34,9 @@ const STATUS_DAMAGED := "damaged"
 const STATUS_READY := "ready"
 const STATUS_FIRING := "firing"
 const STATUS_NO_AMMO := "no_ammo"
+const STATUS_LIT := "lit"
+const STATUS_NO_CREW := "no_crew"
+const STATUS_NO_SUPPLIES := "no_supplies"
 
 
 static func cfg(state) -> Dictionary:
@@ -242,7 +245,9 @@ static func repair_cost(state, b: Dictionary) -> int:
         return 0
     var def: Dictionary = state.data["buildings"][b["type"]]
     var rate: float = float(cfg(state).get("damage", {}).get("repair_rate", 0.5))
-    return int(ceil(float(def["build_cost"]) * rate * float(lost) / float(mx)))
+    var full: float = float(def["build_cost"]) * rate * float(lost) / float(mx)
+    var share: float = float(labour_cfg(state).get("repair_labour_share", 0.0))
+    return int(ceil(full * (1.0 - share * labour_discount(state, int(b["x"]), int(b["y"])))))
 
 
 static func repair(state, uid: int) -> Dictionary:
@@ -260,7 +265,7 @@ static func repair(state, uid: int) -> Dictionary:
     if bool(b.get("stopped", false)):
         b["status"] = "stopped"
     else:
-        b["status"] = STATUS_READY if str(def["kind"]) == "defense" else "built"
+        b["status"] = STATUS_READY if holds_post(str(def["kind"])) else "built"
     state.crisis_stats["repairs_cents"] = int(state.crisis_stats["repairs_cents"]) + cost
     return {"ok": true, "cost": cost}
 
@@ -285,6 +290,7 @@ static func _nearest_building(state, x: int, y: int) -> Dictionary:
 ## Runs after the rival companies and before the market. Fills state.alien_news.
 static func run_day(state) -> void:
     state.alien_news = []
+    _lights_burn(state)          # night starts at the announcement, so searchlights may already burn
     if not landed(state):
         return
     _defenses_fire(state)
@@ -308,6 +314,9 @@ static func _defenses_fire(state) -> void:
     for b in state.buildings:
         var def: Dictionary = defs[b["type"]]
         if str(def["kind"]) != "defense" or bool(b.get("stopped", false)):
+            continue
+        if _crew_ratio(def, b) <= 0.0:
+            b["status"] = STATUS_NO_CREW
             continue
         var rng_tiles: int = int(def["range"])
         var target: Dictionary = {}
@@ -339,7 +348,7 @@ static func _defenses_fire(state) -> void:
             state.crisis_stats["ammo_used"] = int(state.crisis_stats["ammo_used"]) + int(ammo[res])
         b["status"] = STATUS_FIRING
         b["ammo_warned"] = false
-        target["hp"] = int(target["hp"]) - int(def["damage"])
+        target["hp"] = int(target["hp"]) - maxi(1, int(round(float(def["damage"]) * _crew_ratio(def, b) * aim(state, int(b["x"]), int(b["y"])))))
         if int(target["hp"]) <= 0:
             state.crisis_stats["kills"] = int(state.crisis_stats["kills"]) + 1
             state.alien_news.append({"kind": "killed", "alien": target["type"], "x": target["x"], "y": target["y"], "by": b["type"]})
@@ -376,7 +385,7 @@ static func _aliens_act(state) -> void:
             target["health"] = int(target.get("health", max_health(state, target))) - int(a["attack"])
             hits[uid] = int(hits.get(uid, 0)) + int(a["attack"])
             state.crisis_stats["damage_taken"] = int(state.crisis_stats["damage_taken"]) + int(a["attack"])
-            if str(state.data["buildings"][target["type"]]["kind"]) != "defense":
+            if not holds_post(str(state.data["buildings"][target["type"]]["kind"])):
                 target["status"] = STATUS_DAMAGED
             if was_whole and int(target["health"]) > 0:
                 state.alien_news.append({"kind": "attacked", "uid": uid, "type": target["type"], "x": target["x"], "y": target["y"], "alien": a["type"]})
@@ -393,12 +402,22 @@ static func _destroy(state, b: Dictionary, by: String) -> void:
     state.tile_owner.erase(state.tile_key(int(b["x"]), int(b["y"])))
     state.crisis_stats["destroyed"] = int(state.crisis_stats["destroyed"]) + 1
     var lost: Dictionary = {}
+    if str(def["kind"]) == "granary":
+        # Food that no longer fits in the remaining granaries rots in the ruins.
+        for res in state.data["resources"]:
+            if str(state.data["resources"][res].get("store", "")) == "granary":
+                var over_food: int = state.stock(res) - state.room_total(res)
+                if over_food > 0:
+                    state.inventory[res] = state.stock(res) - over_food
+                    lost[res] = over_food
     if str(def["kind"]) == "storage":
         # What no longer fits is lost with the warehouse, biggest stacks first.
         var over: int = state.stored_units() - state.capacity()
         while over > 0:
             var big: String = ""
             for res in state.inventory:
+                if not state.in_yard(res):
+                    continue
                 if big == "" or int(state.inventory[res]) > int(state.inventory[big]):
                     big = res
             if big == "" or int(state.inventory[big]) <= 0:
@@ -512,6 +531,144 @@ static func covered_by(state, x: int, y: int) -> Array:
         if str(def["kind"]) == "defense" and _dist(x, y, int(b["x"]), int(b["y"])) <= int(def["range"]):
             out.append(b)
     return out
+
+
+# ---------- refuge: cheaper labour where people are safe ----------
+## The world is in flight. Hired workers still come, but fewer every year, and almost none to open ground;
+## those who come to defended ground work for less. Your own people (sim/people.gd) need no wage at all.
+## The wage drop also makes repairs and new buildings cheaper, since a good part of their cost is labour.
+
+## Kinds that stand at their post: they are never "built" or idle, and act in the crisis step.
+static func holds_post(kind: String) -> bool:
+    return kind == "defense" or kind == "shelter" or kind == "light"
+
+
+static func labour_cfg(state) -> Dictionary:
+    return cfg(state).get("labour", {})
+
+
+## The best wage drop a fully safe site gets today (0 until the landing).
+static func wage_drop(state) -> float:
+    var l: Dictionary = labour_cfg(state)
+    if l.is_empty() or not landed(state):
+        return 0.0
+    return minf(float(l["max_wage_drop"]), float(l["drop_at_landing"]) + float(l["drop_per_year"]) * years(state))
+
+
+## A defense only protects while it can fire: not stopped, and with ammunition in stock.
+static func defense_supplied(state, def: Dictionary, b: Dictionary) -> bool:
+    if bool(b.get("stopped", false)):
+        return false
+    var ammo: Dictionary = def.get("ammo", {})
+    for res in ammo:
+        if state.stock(res) < int(ammo[res]):
+            return false
+    return true
+
+
+## 0 to 1: how safe the tile feels, from the protection of the supplied defenses that reach it.
+static func safety(state, x: int, y: int) -> float:
+    var total: float = 0.0
+    for b in state.buildings:
+        var def: Dictionary = state.data["buildings"][b["type"]]
+        if str(def["kind"]) != "defense" or _dist(x, y, int(b["x"]), int(b["y"])) > int(def["range"]):
+            continue
+        if defense_supplied(state, def, b):
+            total += float(def.get("protection", 0.5))
+    return minf(1.0, total)
+
+
+## Share by which hired wages are lowered at this tile (0 before the landing).
+static func labour_discount(state, x: int, y: int) -> float:
+    var l: Dictionary = labour_cfg(state)
+    if l.is_empty() or not landed(state):
+        return 0.0
+    var exposed: float = float(l["exposed_share"])
+    return minf(float(l["max_discount"]), wage_drop(state) * (exposed + (1.0 - exposed) * safety(state, x, y)))
+
+
+## Share of the empty places in a crew that hired workers will fill at this tile.
+## Everybody before the landing; then fewer every year, and far fewer where no supplied defense reaches.
+static func hire_share(state, x: int, y: int) -> float:
+    var l: Dictionary = labour_cfg(state)
+    if l.is_empty() or not landed(state):
+        return 1.0
+    var t: float = years(state)
+    var prot: float = maxf(float(l["hire_protected_min"]), float(l["hire_protected_at_landing"]) - float(l["hire_protected_per_year"]) * t)
+    var expo: float = maxf(float(l["hire_exposed_min"]), float(l["hire_exposed_at_landing"]) - float(l["hire_exposed_per_year"]) * t)
+    return expo + (prot - expo) * safety(state, x, y)
+
+
+## Share taken off the cost of a new building at this tile.
+static func build_discount(state, x: int, y: int) -> float:
+    return float(labour_cfg(state).get("build_labour_share", 0.0)) * labour_discount(state, x, y)
+
+
+## For the interface: how the tile stands.
+static func labour_info(state, x: int, y: int) -> Dictionary:
+    return {"safety": safety(state, x, y), "discount": labour_discount(state, x, y), "wage_drop": wage_drop(state), "hire": hire_share(state, x, y)}
+
+
+# ---------- darkness and searchlights ----------
+## Firing gets harder as night falls: defenses hit up to `max_penalty` less in full night,
+## unless a working searchlight reaches them. Searchlights burn their supplies every night.
+
+## 0 to 1: how dark it is, from nothing to full night.
+static func darkness(state) -> float:
+    var n: Dictionary = cfg(state).get("night", {})
+    if n.is_empty() or float(n.get("max", 0.0)) <= 0.0:
+        return 0.0
+    return clampf(night(state) / float(n["max"]), 0.0, 1.0)
+
+
+static func _crew_ratio(def: Dictionary, b: Dictionary) -> float:
+    var crew: int = int(def.get("crew", 0))
+    if crew <= 0:
+        return 1.0
+    return clampf(float(int(b.get("crew_yours", 0)) + int(b.get("crew_hired", crew))) / float(crew), 0.0, 1.0)
+
+
+## 0 to 1: the best light a working searchlight throws on this tile (scaled by its crew).
+static func light_at(state, x: int, y: int) -> float:
+    var best: float = 0.0
+    for b in state.buildings:
+        var def: Dictionary = state.data["buildings"][b["type"]]
+        if str(def["kind"]) != "light" or str(b.get("status", "")) != STATUS_LIT:
+            continue
+        if _dist(x, y, int(b["x"]), int(b["y"])) <= int(def["range"]):
+            best = maxf(best, _crew_ratio(def, b))
+    return best
+
+
+## What a defense's damage is multiplied by in the dark at this tile (1 by day or in full light).
+static func aim(state, x: int, y: int) -> float:
+    var pen: float = float(cfg(state).get("darkness", {}).get("max_penalty", 0.0)) * darkness(state)
+    return 1.0 - pen * (1.0 - light_at(state, x, y))
+
+
+## Searchlights burn their supplies whenever it is dark at all; out of supplies they go dark (said once).
+static func _lights_burn(state) -> void:
+    var dark: bool = darkness(state) > 0.0
+    for b in state.buildings:
+        var def: Dictionary = state.data["buildings"][b["type"]]
+        if str(def["kind"]) != "light":
+            continue
+        if bool(b.get("stopped", false)) or not dark or _crew_ratio(def, b) <= 0.0:
+            b["status"] = STATUS_READY
+            continue
+        var need: Dictionary = def.get("supplies", {})
+        var ok: bool = true
+        for res in need:
+            if state.stock(res) < int(need[res]):
+                ok = false
+        if ok:
+            for res in need:
+                state.inventory[res] = state.stock(res) - int(need[res])
+            b["status"] = STATUS_LIT
+        else:
+            if str(b.get("status", "")) != STATUS_NO_SUPPLIES:
+                state.alien_news.append({"kind": "no_supplies", "uid": b["uid"], "type": b["type"], "x": b["x"], "y": b["y"]})
+            b["status"] = STATUS_NO_SUPPLIES
 
 
 # ---------- saving ----------

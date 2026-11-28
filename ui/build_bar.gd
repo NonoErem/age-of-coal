@@ -5,6 +5,7 @@ extends HFlowContainer
 const Style = preload("res://ui/style.gd")
 const ArtLibrary = preload("res://game/art_library.gd")
 const Survey = preload("res://sim/survey.gd")
+const Crisis = preload("res://sim/crisis.gd")
 
 signal tool_selected(building_id: String)
 signal survey_selected(level: int)
@@ -24,9 +25,10 @@ func setup(p_state) -> void:
     group = ButtonGroup.new()
     group.allow_unpress = true
     var defs: Dictionary = state.data["buildings"]
-    for kind in ["extractor", "factory", "storage", "defense"]:
+    var groups: Dictionary = {"extractor": ["extractor"], "factory": ["factory"], "storage": ["storage"], "defense": ["defense", "light"], "shelter": ["shelter", "granary"]}
+    for kind in ["extractor", "factory", "storage", "defense", "shelter"]:
         var label := Label.new()
-        label.text = {"extractor": "Mines", "factory": "Factories", "storage": "Storage", "defense": "Defenses"}[kind]
+        label.text = {"extractor": "Mines", "factory": "Factories", "storage": "Storage", "defense": "Defenses", "shelter": "People"}[kind]
         label.add_theme_color_override("font_color", Style.INK_SOFT)
         label.add_theme_font_size_override("font_size", 12)
         label.custom_minimum_size = Vector2(52, 0)
@@ -34,7 +36,7 @@ func setup(p_state) -> void:
         group_labels.append(label)
         add_child(label)
         for id in defs:
-            if defs[id]["kind"] != kind:
+            if not groups[kind].has(str(defs[id]["kind"])):
                 continue
             var b := Button.new()
             b.toggle_mode = true
@@ -135,12 +137,28 @@ func refresh() -> void:
         b.text = "%s\n%s" % [str(def.get("short_name", def["name"])), Style.money0(cost)]
         var tip: Array = [str(def["name"])]
         tip.append("Cost %s (+%d%% for each you already own), plus the land price on a deposit" % [Style.money0(cost), int(round(float(state.data["balance"]["cost_growth_per_owned"]) * 100.0))])
+        if int(def.get("crew", 0)) > 0:
+            tip.append("Needs a crew of %d. Short of workers, it works in proportion" % int(def["crew"]))
+        if Crisis.enabled(state):
+            tip.append("Once the creatures land, hired labour gets cheaper on ground your supplied defenses protect, but fewer come every year")
         tip.append("Upkeep %s a day (%s when idle)" % [Style.money(int(def["upkeep_per_day"])), Style.money(int(round(float(def["upkeep_per_day"]) * idle)))])
         if def["kind"] == "defense":
             tip.append("Fires at the nearest creature within %d tiles: %d damage a day" % [int(def["range"]), int(def["damage"])])
             tip.append("Uses %s on each day it fires. No ammunition, no fire" % Style.items_text(def.get("ammo", {}), res))
             tip.append("%d health. Keeps firing while damaged" % int(def.get("health", 150)))
             tip.append("Goes on free ground. Put it where the creatures will come")
+        elif def["kind"] == "shelter":
+            tip.append("Houses %d of your people once the creatures have landed. They work for food, with no wage" % int(def["housing"]))
+            tip.append("Refugees only come and stay where a supplied defense reaches the shelter, and while you have food")
+            tip.append("Each person eats %s food a day, from your granaries" % str(float(state.data["balance"]["people"]["ration"])))
+            tip.append("%d health. Goes on free ground" % int(def.get("health", 110)))
+        elif def["kind"] == "granary":
+            tip.append("Keeps %d food. Food keeps nowhere else, and spoils a little every day (%s%%)" % [int(def["food_capacity"]), str(float(state.data["balance"]["people"]["spoil_per_day"]) * 100.0)])
+            tip.append("Goes on free ground")
+        elif def["kind"] == "light":
+            tip.append("Lights every defense within %d tiles, so they aim as well at night as by day" % int(def["range"]))
+            tip.append("In the dark, unlit defenses hit up to %d%% less. Burns %s a night" % [int(round(float(state.data["crisis"].get("darkness", {}).get("max_penalty", 0.0)) * 100.0)), Style.items_text(def.get("supplies", {}), res)])
+            tip.append("%d health. Goes on free ground" % int(def.get("health", 120)))
         elif def["kind"] == "storage":
             tip.append("Adds room for %d more units of anything" % int(def["capacity"]))
             tip.append("Goes on free ground")

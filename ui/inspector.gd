@@ -6,6 +6,7 @@ const ArtLibrary = preload("res://game/art_library.gd")
 const Survey = preload("res://sim/survey.gd")
 const Production = preload("res://sim/production.gd")
 const Crisis = preload("res://sim/crisis.gd")
+const People = preload("res://sim/people.gd")
 
 signal stop_toggled(uid: int)
 signal repair_requested(uid: int)
@@ -89,7 +90,7 @@ func refresh() -> void:
         var status: String = str(b["status"])
         var res_names: Callable = func(ids: Array) -> String: return Style.names_text(ids, res)
         var damaged: bool = Crisis.is_damaged(state, b)
-        if damaged and def["kind"] != "defense":
+        if damaged and not Crisis.holds_post(str(def["kind"])):
             lines.append("Damaged: it does nothing until repaired (%d of %d health)." % [int(b["health"]), Crisis.max_health(state, b)])
             detail_label.add_theme_color_override("font_color", Style.BAD)
         if def["kind"] == "defense":
@@ -102,9 +103,43 @@ func refresh() -> void:
                 "stopped":
                     lines.append("Stopped by you. It does not fire.")
                     detail_label.add_theme_color_override("font_color", Style.SELECT)
+                "no_crew":
+                    lines.append("Nobody to man it! It does not fire.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
                 _:
                     lines.append("Ready. Nothing in reach.")
-            lines.append("Reach %d tiles, %d damage a day, uses %s on each day it fires. Health %d of %d%s." % [int(def["range"]), int(def["damage"]), Style.items_text(def.get("ammo", {}), res), int(b["health"]), Crisis.max_health(state, b), " (keeps firing while damaged)" if damaged else ""])
+            var aim: float = Crisis.aim(state, x, y)
+            var hit: int = maxi(1, int(round(float(def["damage"]) * People.crew_ratio(state, b) * aim)))
+            lines.append("Reach %d tiles, %d damage a day%s, uses %s on each day it fires. Health %d of %d%s." % [int(def["range"]), hit, (" (%d%% in the dark)" % int(round(aim * 100.0))) if aim < 0.995 else (" (lit)" if Crisis.light_at(state, x, y) > 0.0 and Crisis.darkness(state) > 0.0 else ""), Style.items_text(def.get("ammo", {}), res), int(b["health"]), Crisis.max_health(state, b), " (keeps firing while damaged)" if damaged else ""])
+        elif def["kind"] == "shelter":
+            var pt: Dictionary = People.totals(state)
+            match status:
+                "unsafe":
+                    lines.append("No supplied defense reaches it: refugees will not stay here.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "stopped":
+                    lines.append("Stopped by you. Nobody is housed.")
+                    detail_label.add_theme_color_override("font_color", Style.SELECT)
+                "housing":
+                    lines.append("Open. Your people: %d in %d places, food for %s." % [state.people, int(pt["housing"]), ("%d days" % People.food_days(state)) if People.food_days(state) >= 0 else "everyone"])
+                _:
+                    lines.append("Ready. Refugees come once the creatures land.")
+            lines.append("Houses %d. Needs a supplied defense in reach and food in your granaries. Health %d of %d." % [int(def["housing"]), int(b["health"]), Crisis.max_health(state, b)])
+        elif def["kind"] == "light":
+            match status:
+                "lit":
+                    lines.append("Lit.")
+                "no_supplies":
+                    lines.append("Out of %s! It is dark." % Style.names_text(def.get("supplies", {}).keys(), res))
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
+                "stopped":
+                    lines.append("Stopped by you. It is dark.")
+                    detail_label.add_theme_color_override("font_color", Style.SELECT)
+                _:
+                    lines.append("Ready. It lights up when night falls." if Crisis.darkness(state) <= 0.0 else "Dark: nobody to run it.")
+            lines.append("Lights defenses within %d tiles, burns %s a night. Darkness now %d%%. Health %d of %d." % [int(def["range"]), Style.items_text(def.get("supplies", {}), res), int(round(Crisis.darkness(state) * 100.0)), int(b["health"]), Crisis.max_health(state, b)])
+        elif def["kind"] == "granary":
+            lines.append("Keeps %d food. In store: %d of %d food, spoiling %s%% a day." % [int(def["food_capacity"]), state.food_stored(), state.food_capacity(), str(float(state.data["balance"]["people"]["spoil_per_day"]) * 100.0)])
         elif damaged:
             pass
         elif def["kind"] == "storage":
@@ -120,6 +155,9 @@ func refresh() -> void:
                 "stopped":
                     lines.append("Stopped by you. It makes and uses nothing.")
                     detail_label.add_theme_color_override("font_color", Style.SELECT)
+                "no_crew":
+                    lines.append("Nobody to work it.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
                 "running":
                     lines.append("Running %d of %d batches" % [int(b["batches"]), int(def.get("batches_per_day", 1))])
                 _:
@@ -136,9 +174,12 @@ func refresh() -> void:
                 "stopped":
                     lines.append("Stopped by you. Nothing is dug.")
                     detail_label.add_theme_color_override("font_color", Style.SELECT)
+                "no_crew":
+                    lines.append("Nobody to work it. Nothing is dug.")
+                    detail_label.add_theme_color_override("font_color", Style.WARN)
                 _:
                     lines.append("Produces %s a day, times richness" % Style.items_text(def["outputs"], res))
-        if Crisis.announced(state) and def["kind"] != "defense":
+        if Crisis.announced(state) and not Crisis.holds_post(str(def["kind"])):
             var cover: int = Crisis.covered_by(state, x, y).size()
             lines.append("Covered by %d defense%s." % [cover, "" if cover == 1 else "s"] if cover > 0 else "Not covered by any defense.")
         if damaged:
@@ -146,11 +187,19 @@ func refresh() -> void:
             bar.max_value = float(Crisis.max_health(state, b))
             bar.value = float(b["health"])
         var idle: float = float(state.data["balance"]["idle_upkeep_factor"])
-        var upkeep_now: int = Production.upkeep_of(def, status, idle)
-        if upkeep_now != int(def["upkeep_per_day"]):
-            lines.append("Upkeep %s/day (idle rate)" % Style.money(upkeep_now))
-        else:
-            lines.append("Upkeep %s/day" % Style.money(upkeep_now))
+        var upkeep_now: int = Production.upkeep_of(def, status, idle, People.upkeep_mult(state, b))
+        var crew: int = People.crew_of(def)
+        var head: String = ""
+        if crew > 0:
+            var have: int = int(b.get("crew_yours", 0)) + int(b.get("crew_hired", 0))
+            head = "Crew %d/%d (%d yours, %d hired)%s. " % [have, crew, int(b.get("crew_yours", 0)), int(b.get("crew_hired", 0)), (", working at %d%%" % int(round(People.crew_ratio(state, b) * 100.0))) if have < crew else ""]
+            if have < crew:
+                detail_label.add_theme_color_override("font_color", Style.WARN)
+        var tail: String = ""
+        if Crisis.landed(state) and crew > 0:
+            var li: Dictionary = Crisis.labour_info(state, x, y)
+            tail = " Hired workers: %s%s." % ["plenty (protected)" if float(li["safety"]) >= 0.99 else ("some (partly protected)" if float(li["safety"]) > 0.0 else "few (exposed)"), (", %d%% cheaper" % int(round(float(li["discount"]) * 100.0))) if float(li["discount"]) > 0.005 else ""]
+        lines.append("%sUpkeep %s/day%s.%s" % [head, Style.money(upkeep_now), " (idle rate)" if Production.IDLE_STATUSES.has(status) else "", tail])
         _build_actions(b, def)
     elif dep_id != "":
         var info: Dictionary = state.data["map"]["deposits"][dep_id]
@@ -179,7 +228,7 @@ func refresh() -> void:
         var def2: Dictionary = state.data["buildings"][tool_id]
         var why: String = state.check_placement(tool_id, x, y)
         if why == "":
-            var cost: int = state.build_cost(tool_id, dep_id)
+            var cost: int = state.build_cost(tool_id, dep_id, x, y)
             lines.append("Click to place %s for %s%s" % [str(def2["name"]), Style.money(cost), "" if cost <= state.money_cents else " (not enough cash)"])
         else:
             lines.append("%s cannot go here: %s" % [str(def2["name"]), reason_text(why)])

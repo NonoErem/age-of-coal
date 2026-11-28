@@ -30,6 +30,7 @@ const Crisis = preload("res://sim/crisis.gd")
 const TimeBar = preload("res://ui/time_bar.gd")
 const Telegram = preload("res://ui/telegram.gd")
 const NightOverlay = preload("res://ui/night_overlay.gd")
+const NightLights = preload("res://ui/night_lights.gd")
 
 const SPEEDS := [1, 2, 4]
 
@@ -49,6 +50,7 @@ var top_bar
 var time_bar
 var telegram
 var night
+var night_lights
 var map_view
 var inspector
 var build_bar
@@ -196,6 +198,9 @@ func _build_ui() -> void:
     night = NightOverlay.new()
     night.setup(state)
     add_child(night)
+    night_lights = NightLights.new()
+    night_lights.setup(state, map_view)
+    add_child(night_lights)
 
     # The menu goes last so it sits on top of everything.
     menu = GameMenu.new()
@@ -534,6 +539,7 @@ func _log_day() -> void:
     _log_rules()
     _log_rivals()
     _log_crisis()
+    _log_people()
     for e in state.events:
         var name_text: String = str(defs[e["type"]]["name"])
         match str(e["kind"]):
@@ -595,6 +601,19 @@ func _log_rivals() -> void:
 
 
 ## The invasion: telegrams for the big moments (they pause the game), log lines for the rest.
+func _log_people() -> void:
+    for n in state.people_news:
+        match str(n["kind"]):
+            "first":
+                log_message("The first refugees have come to your shelters: %d of them. They work for food, with no wage, and take places in your crews before anyone is hired." % int(n["count"]), "good")
+            "full":
+                log_message("Your shelters are full: %d people live with you. More shelters, on defended ground, would house more." % int(n["count"]), "info")
+            "hungry":
+                log_message("Your people are going hungry! %d left today. Buy food, and build granaries to keep it." % int(n["left"]), "bad")
+            "homeless":
+                log_message("%d of your people had nowhere safe to sleep and left. A shelter was lost, or no supplied defense reaches it any more." % int(n["left"]), "warn")
+
+
 func _log_crisis() -> void:
     var defs: Dictionary = state.data["buildings"]
     var kills: Dictionary = {}
@@ -632,6 +651,8 @@ func _log_crisis() -> void:
                 kills[str(n["alien"])] = int(kills.get(str(n["alien"]), 0)) + 1
             "no_ammo":
                 log_message("Your %s at (%d, %d) has creatures in reach but no munitions!" % [str(defs[n["type"]]["name"]), int(n["x"]), int(n["y"])], "warn")
+            "no_supplies":
+                log_message("Your %s at (%d, %d) has run out of %s and gone dark. Defenses in the dark aim badly." % [str(defs[n["type"]]["name"]).to_lower(), int(n["x"]), int(n["y"]), Style.names_text(defs[n["type"]].get("supplies", {}).keys(), state.data["resources"]).to_lower()], "warn")
             "left":
                 left += 1
     if not kills.is_empty():
@@ -705,6 +726,7 @@ func refresh_all() -> void:
     automation_panel.refresh()
     time_bar.refresh()
     night.refresh()
+    night_lights.refresh()
     companies_panel.refresh()
     news_panel.refresh()
     inspector.refresh()

@@ -76,7 +76,7 @@ static func _execute(state, o: Dictionary) -> String:
         if n < want:
             result = "partial_stock" if n > 0 else "no_stock"
     else:
-        n = mini(want, state.free_space())
+        n = mini(want, state.room_for(res))
         if n < want:
             result = "partial_room" if n > 0 else "no_room"
         var afford: int = _affordable(state, res, n)

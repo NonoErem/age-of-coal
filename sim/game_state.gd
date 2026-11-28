@@ -12,7 +12,8 @@ const Companies = preload("res://sim/companies.gd")
 const Survey = preload("res://sim/survey.gd")
 const Rules = preload("res://sim/rules.gd")
 const Crisis = preload("res://sim/crisis.gd")
-const SAVE_VERSION := 10
+const People = preload("res://sim/people.gd")
+const SAVE_VERSION := 11
 const HISTORY_DAYS := 120
 
 signal day_advanced(day: int)
@@ -57,6 +58,12 @@ var alien_next_id: int = 1
 var alien_rng := RandomNumberGenerator.new()  # separate stream: the invasion never disturbs prices or offers
 var alien_news: Array = []         # what the crisis and the creatures did today (not saved)
 var crisis_stats: Dictionary = {}
+var people: int = 0                # your people: refugees housed in shelters (see people.gd)
+var ration_carry: float = 0.0      # fraction of a ration owed, carried to the next day
+var spoil_carry: Dictionary = {}   # resource id -> fraction of a unit spoiled, carried over
+var people_stats: Dictionary = {"arrived": 0, "left": 0, "spoiled": 0}
+var people_flags: Dictionary = {}  # so news is said once: hungry, full, first
+var people_news: Array = []        # what happened to your people today (not saved)
 var history: Dictionary = {}       # resource id -> end-of-day spot prices in cents, newest last
 var _deposit_tiles: Dictionary = {}  # "x,y" -> deposit id
 
@@ -82,6 +89,7 @@ func _init(game_data: Dictionary, p_seed: int = 12345) -> void:
         _deposit_tiles[tile_key(int(d["x"]), int(d["y"]))] = id
     Survey.reset(self)
     Crisis.reset(self)
+    People.reset(self)
     Crisis.apply_market(self)
     Contracts.setup(self)
     _record_history()
@@ -106,6 +114,41 @@ func stock(id: String) -> int:
 
 # ---------- storage ----------
 
+## Food and other granary goods are kept apart: only granaries hold them, and they never count against the yard.
+func in_yard(id: String) -> bool:
+    return str(data["resources"].get(id, {}).get("store", "")) != "granary"
+
+
+## What granaries hold in all.
+func food_capacity() -> int:
+    var total: int = int(data["balance"].get("people", {}).get("base_food_storage", 0))
+    for b in buildings:
+        var def: Dictionary = data["buildings"][b["type"]]
+        if def["kind"] == "granary":
+            total += int(def["food_capacity"])
+    return total
+
+
+func food_stored() -> int:
+    var total: int = 0
+    for id in inventory:
+        if not in_yard(id):
+            total += int(inventory[id])
+    return total
+
+
+## The storage a good goes into, in all.
+func room_total(id: String) -> int:
+    return capacity() if in_yard(id) else food_capacity()
+
+
+## Room left for this good: yard and warehouses, or granaries for food.
+func room_for(id: String) -> int:
+    if in_yard(id):
+        return free_space()
+    return maxi(0, food_capacity() - food_stored())
+
+
 ## Units you can keep: the open yard plus every warehouse.
 func capacity() -> int:
     var total: int = int(data["balance"]["base_storage"])
@@ -119,7 +162,8 @@ func capacity() -> int:
 func stored_units() -> int:
     var total: int = 0
     for id in inventory:
-        total += int(inventory[id])
+        if in_yard(id):
+            total += int(inventory[id])
     return total
 
 
@@ -134,8 +178,8 @@ func buy(id: String, qty: int) -> Dictionary:
         return {"ok": false, "reason": "unknown_resource"}
     if qty <= 0:
         return {"ok": false, "reason": "invalid_quantity"}
-    if qty > free_space():
-        return {"ok": false, "reason": "storage_full", "free": free_space()}
+    if qty > room_for(id):
+        return {"ok": false, "reason": "storage_full" if in_yard(id) else "granary_full", "free": room_for(id)}
     if market.trade_room(id) >= 0 and qty > market.trade_room(id):
         return {"ok": false, "reason": "market_limit", "room": market.trade_room(id)}
     var quote: int = market.quote_buy(id, qty)
@@ -206,10 +250,13 @@ func count_owned(building_id: String) -> int:
 
 
 ## Price of the next building of this type, plus the land cost when built on a deposit.
-func build_cost(building_id: String, deposit_id: String = "") -> int:
+## With a tile (x, y), the invasion's labour discount for that spot is taken off the building itself (not the land).
+func build_cost(building_id: String, deposit_id: String = "", x: int = -1, y: int = -1) -> int:
     var def: Dictionary = data["buildings"][building_id]
     var growth: float = float(data["balance"]["cost_growth_per_owned"])
     var base: float = float(def["build_cost"]) * (1.0 + growth * float(count_owned(building_id)))
+    if x >= 0 and y >= 0:
+        base *= 1.0 - Crisis.build_discount(self, x, y)
     var land: int = 0
     if deposit_id != "":
         land = int(data["map"]["deposits"][deposit_id]["land_cost"])
@@ -247,7 +294,7 @@ func build(building_id: String, x: int, y: int) -> Dictionary:
     if why != "":
         return {"ok": false, "reason": why}
     var dep_id: String = deposit_id_at(x, y)
-    var cost: int = build_cost(building_id, dep_id)
+    var cost: int = build_cost(building_id, dep_id, x, y)
     if cost > money_cents:
         return {"ok": false, "reason": "insufficient_funds", "cost": cost}
     money_cents -= cost
@@ -257,11 +304,12 @@ func build(building_id: String, x: int, y: int) -> Dictionary:
         "stopped": false, "paid": cost,
     }
     b["health"] = Crisis.max_health(self, b)
-    if def_kind(building_id) == "defense":
+    if Crisis.holds_post(def_kind(building_id)):
         b["status"] = Crisis.STATUS_READY
     next_uid += 1
     buildings.append(b)
     tile_owner[tile_key(x, y)] = int(b["uid"])
+    People.staff(self)
     return {"ok": true, "cost": cost, "uid": int(b["uid"])}
 
 
@@ -275,7 +323,9 @@ func repair_cost(uid: int) -> int:
 
 
 func repair(uid: int) -> Dictionary:
-    return Crisis.repair(self, uid)
+    var r: Dictionary = Crisis.repair(self, uid)
+    People.staff(self)
+    return r
 
 
 func building_by_uid(uid: int) -> Dictionary:
@@ -306,6 +356,7 @@ func demolish(uid: int) -> Dictionary:
     money_cents += refund
     buildings.erase(b)
     tile_owner.erase(tile_key(int(b["x"]), int(b["y"])))
+    People.staff(self)
     return {"ok": true, "refund": refund, "type": b["type"], "x": b["x"], "y": b["y"]}
 
 
@@ -315,17 +366,18 @@ func set_building_stopped(uid: int, stopped: bool) -> Dictionary:
     var b: Dictionary = building_by_uid(uid)
     if b.is_empty():
         return {"ok": false, "reason": "unknown_building"}
-    if data["buildings"][b["type"]]["kind"] == "storage":
+    if data["buildings"][b["type"]]["kind"] == "storage" or data["buildings"][b["type"]]["kind"] == "granary":
         return {"ok": false, "reason": "cannot_stop"}
     b["stopped"] = stopped
     if stopped:
         b["status"] = Production.STATUS_STOPPED
-    elif Crisis.is_damaged(self, b) and def_kind(b["type"]) != "defense":
+    elif Crisis.is_damaged(self, b) and not Crisis.holds_post(def_kind(b["type"])):
         b["status"] = Crisis.STATUS_DAMAGED
     else:
-        b["status"] = Crisis.STATUS_READY if def_kind(b["type"]) == "defense" else Production.STATUS_BUILT
+        b["status"] = Crisis.STATUS_READY if Crisis.holds_post(def_kind(b["type"])) else Production.STATUS_BUILT
     b["missing"] = []
     b["batches"] = 0
+    People.staff(self)
     return {"ok": true, "stopped": stopped}
 
 
@@ -379,6 +431,8 @@ func advance_day() -> void:
     # Order of a day: production -> upkeep -> standing orders -> rules -> rival companies -> market (prices recover, presence updates) -> new day -> crisis (defenses fire, creatures move and attack, new ones land) -> market events -> price history -> contracts -> rivals take offers.
     # Still to come: events before the market; transport and a bankruptcy check.
     events = []
+    people_news = []
+    People.staff(self)
     last_report = Production.run_day(self)
     money_cents -= int(last_report["upkeep_cents"])
     StandingOrders.run_day(self)
@@ -387,7 +441,9 @@ func advance_day() -> void:
     market.advance_day(rng, _net_surplus(last_report))
     day += 1
     Crisis.apply_market(self)
-    Crisis.run_day(self)        # overnight: defenses fire, creatures move and attack, new ones land
+    Crisis.run_day(self)        # overnight: searchlights burn, defenses fire, creatures move and attack, new ones land
+    People.run_day(self)        # food spoils, your people eat, the hungry and homeless leave, newcomers arrive
+    People.staff(self)          # tomorrow's crews, so the interface shows them
     Crisis.calendar_news(self)
     MarketEvents.daily_update(self)
     _record_history()
@@ -430,6 +486,7 @@ func to_dict() -> Dictionary:
         "survey": Survey.to_dict(self),
         "rules": Rules.to_dict(self),
         "crisis": Crisis.to_dict(self),
+        "people": People.to_dict(self),
         "contracts": {
             "board": board.duplicate(true), "active": active_contracts.duplicate(true),
             "stats": contract_stats.duplicate(), "next_id": contract_next_id,
@@ -441,7 +498,7 @@ func to_dict() -> Dictionary:
 func load_dict(d: Dictionary) -> bool:
     if int(d.get("version", 0)) != SAVE_VERSION:
         return false
-    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts", "market_events", "event_rng_state", "orders", "rivals", "survey", "rules", "crisis"]:
+    for key in ["seed", "rng_state", "day", "money_cents", "inventory", "market", "buildings", "deposits", "next_uid", "contracts", "market_events", "event_rng_state", "orders", "rivals", "survey", "rules", "crisis", "people"]:
         if not d.has(key):
             return false
     seed_value = int(d["seed"])
@@ -537,6 +594,8 @@ func load_dict(d: Dictionary) -> bool:
     if not Crisis.load_dict(self, d["crisis"]):
         return false
     Crisis.apply_market(self)
+    People.load_dict(self, d["people"])
+    People.staff(self)
     var c: Dictionary = d["contracts"]
     contract_rng.seed = seed_value + 7919
     contract_rng.state = String(c["rng_state"]).to_int()

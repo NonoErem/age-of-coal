@@ -7,9 +7,10 @@ extends SceneTree
 const DataLoader = preload("res://sim/data_loader.gd")
 const GameState = preload("res://sim/game_state.gd")
 const Crisis = preload("res://sim/crisis.gd")
+const Production = preload("res://sim/production.gd")
 
 
-func base(gs, defended: bool) -> void:
+func base(gs, defended: bool, refuge: bool = false) -> void:
     gs.money_cents = 50000000
     # A cluster around the middle-left of the map: mines on known deposits plus factories.
     var spots: Array = [["coke_oven", 9, 7], ["blast_furnace", 11, 7], ["steelworks", 13, 8], ["warehouse", 10, 9], ["munitions_works", 12, 10]]
@@ -24,23 +25,34 @@ func base(gs, defended: bool) -> void:
         for p in [[7, 5], [15, 5], [7, 11], [15, 11], [11, 4], [11, 12]]:
             gs.build("mg_nest", p[0], p[1])
         gs.build("field_battery", 11, 8)
+    if refuge:
+        # The same base, plus what this round adds: shelters and a granary for your people, searchlights for the night.
+        for p in [[9, 9], [13, 9], [10, 11]]:
+            gs.build("shelter", p[0], p[1])
+        gs.build("granary", 12, 9)
+        gs.build("granary", 9, 10)
+        gs.build("searchlight", 9, 6)
+        gs.build("searchlight", 13, 11)
     gs.money_cents = 5000000
 
 
-func run(defended: bool, seed: int) -> void:
+func run(defended: bool, seed: int, refuge: bool = false) -> void:
     var gs = GameState.new(DataLoader.load_game_data(), seed)
-    base(gs, defended)
+    base(gs, defended, refuge)
     var start_buildings: int = gs.buildings.size()
     var damaged_days: int = 0
     var first_destroy: int = -1
     var max_one_day: int = 0
-    print("\n== %s, seed %d: %d buildings ==" % ["DEFENDED" if defended else "UNDEFENDED", seed, start_buildings])
+    print("\n== %s, seed %d: %d buildings ==" % ["REFUGE (defended + people + lights)" if refuge else ("DEFENDED" if defended else "UNDEFENDED"), seed, start_buildings])
     print("%5s %-9s %5s %6s %6s %6s %5s %6s %7s %7s %s" % ["day", "phase", "alive", "spawn", "kills", "dest", "dmgd", "cap", "coal$", "rail$", "rivals h/w/b (sizes)"])
     for d in 1200:
         if defended:
             # Keep munitions and repair everything every day: what a careful player could do.
             if gs.stock("munitions") < 30:
                 gs.inventory["munitions"] = gs.stock("munitions") + 30
+            if refuge:
+                gs.inventory["food"] = maxi(gs.stock("food"), mini(gs.food_capacity(), 200))
+                gs.inventory["coal"] = maxi(gs.stock("coal"), 30)
             for b in gs.buildings:
                 if Crisis.is_damaged(gs, b):
                     gs.money_cents += Crisis.repair_cost(gs, b)
@@ -75,6 +87,8 @@ func run(defended: bool, seed: int) -> void:
             print("%5d %-9s %5d %6d %6d %6d %5d %6d %7.2f %7.2f %d/%d/%d %s" % [gs.day, str(Crisis.phase(gs).get("name", "")), gs.aliens.size(), int(gs.crisis_stats["spawned"]),
                 int(gs.crisis_stats["kills"]), int(gs.crisis_stats["destroyed"]), dmg, gs.market.trade_cap,
                 gs.market.spot_price("coal") / 100.0, gs.market.spot_price("rails") / 100.0, h, w, bk, " ".join(sizes)])
+    if refuge:
+        print("people at the end %d (arrived %d, left %d), upkeep at the end $%d/day" % [gs.people, int(gs.people_stats["arrived"]), int(gs.people_stats["left"]), Production.current_upkeep(gs) / 100])
     print("buildings left %d of %d, first destroyed on day %s, worst single-day loss on one building %d hp, ammo used %d, repairs $%d" % [
         gs.buildings.size(), start_buildings, str(first_destroy), max_one_day, int(gs.crisis_stats["ammo_used"]), int(gs.crisis_stats["repairs_cents"]) / 100])
 
@@ -83,4 +97,5 @@ func _init() -> void:
     for seed in [1, 2]:
         run(false, seed)
         run(true, seed)
+        run(true, seed, true)
     quit(0)

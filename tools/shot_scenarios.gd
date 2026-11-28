@@ -108,6 +108,40 @@ func run(scene: Control, name: String) -> void:
                 Crisis.apply_market(s)
             scene.refresh_all()
             scene.night.color = Crisis.night_tint(s)
+        "refuge", "night_lights":
+            s.data["events"]["chance_per_day"] = 0.0
+            s.money_cents = 90000000
+            for spot in [["coke_oven", 9, 7], ["blast_furnace", 11, 7], ["steelworks", 13, 8], ["warehouse", 10, 9], ["munitions_works", 12, 10], ["mg_nest", 8, 5], ["mg_nest", 14, 6], ["field_battery", 11, 5], ["shelter", 12, 6], ["shelter", 10, 8], ["granary", 8, 9], ["searchlight", 9, 5], ["coke_oven", 28, 16], ["mg_nest", 7, 8]]:
+                var placed: bool = false
+                for rr in 4:
+                    for dy in range(-rr, rr + 1):
+                        for dx in range(-rr, rr + 1):
+                            if not placed and s.check_placement(spot[0], spot[1] + dx, spot[2] + dy) == "":
+                                s.build(spot[0], spot[1] + dx, spot[2] + dy)
+                                placed = true
+            var days: int = 420 if name == "refuge" else 600
+            for d in days:
+                s.inventory["munitions"] = maxi(s.stock("munitions"), 40)
+                s.inventory["coal"] = maxi(s.stock("coal"), 60)
+                s.inventory["food"] = maxi(s.stock("food"), mini(s.food_capacity(), 150))
+                s.money_cents = maxi(s.money_cents, 5000000)
+                for b in s.buildings:
+                    if Crisis.is_damaged(s, b):
+                        s.repair(int(b["uid"]))
+                s.advance_day()
+            scene.telegram.close()
+            scene.select_tile(9, 7)
+            scene.refresh_all()
+            scene.night.color = Crisis.night_tint(s)
+        "bright":
+            s.data["events"]["chance_per_day"] = 0.0
+            s.money_cents = 9000000
+            for spot in [["coke_oven", 9, 7], ["blast_furnace", 11, 7], ["warehouse", 10, 9]]:
+                s.build(spot[0], spot[1], spot[2])
+            for d in 12:
+                s.advance_day()
+            scene.select_tile(9, 7)
+            scene.refresh_all()
         "dusk":
             s.data["events"]["chance_per_day"] = 0.0
             for d in 372:

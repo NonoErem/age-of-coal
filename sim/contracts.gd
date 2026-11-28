@@ -119,7 +119,7 @@ static func max_deliverable(state, res: String, days: int) -> int:
     var have: float = float(state.stock(res)) + production_rate(state, res) * float(days)
     var bal: Dictionary = state.data["balance"]
     var unit_buy: float = state.market.reference_price(res) * (1.0 + float(bal["spread"])) * (1.0 + float(bal["fee"])) * 1.5
-    var buyable: float = minf(floor(float(maxi(state.money_cents, 0)) / unit_buy), float(state.free_space()))
+    var buyable: float = minf(floor(float(maxi(state.money_cents, 0)) / unit_buy), float(state.room_for(res)))
     return int(have + buyable)
 
 

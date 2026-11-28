@@ -147,7 +147,9 @@ func _init() -> void:
     check(not gb.alien_news.any(func(n: Dictionary) -> bool: return n["kind"] == "attacked"), "the attack is announced once, not every day")
     var cost: int = gb.repair_cost(int(oven["uid"]))
     var expect: int = int(ceil(float(gd["buildings"]["coke_oven"]["build_cost"]) * 0.5 * float(120 - int(oven["health"])) / 120.0))
-    check(cost == expect, "repairs cost half the build price for full damage, in proportion (%s)" % cost)
+    var exposed_cut: float = 1.0 - float(gd["crisis"]["labour"]["repair_labour_share"]) * Crisis.labour_discount(gb, int(oven["x"]), int(oven["y"]))
+    expect = int(ceil(float(gd["buildings"]["coke_oven"]["build_cost"]) * 0.5 * float(120 - int(oven["health"])) / 120.0 * exposed_cut))
+    check(cost == expect, "repairs cost half the build price for full damage, in proportion, less the (small) discount of an exposed site (%s)" % cost)
     var cash: int = gb.money_cents
     check(gb.repair(int(oven["uid"]))["ok"] and int(oven["health"]) == 120 and gb.money_cents == cash - cost and oven["status"] == "built", "repairing restores it and charges")
     check(not gb.repair(int(oven["uid"]))["ok"], "an intact building cannot be repaired")
@@ -194,7 +196,8 @@ func _init() -> void:
     check(not gdf.alien_news.any(func(n: Dictionary) -> bool: return n["kind"] == "no_ammo"), "once, not every day")
     gdf.inventory["munitions"] = 5
     gdf.advance_day()
-    check(nest["status"] == "firing" and gdf.stock("munitions") == 4 and int(gdf.aliens[0]["hp"]) == 10, "with munitions it fires: 30 damage for one munition")
+    var hit30: int = int(round(30.0 * Crisis.aim(gdf, int(nest["x"]), int(nest["y"]))))
+    check(nest["status"] == "firing" and gdf.stock("munitions") == 4 and int(gdf.aliens[0]["hp"]) == 40 - hit30 and hit30 < 30 and hit30 >= 15, "with munitions it fires: 30 damage for one munition, a little less in the dusk (%d)" % hit30)
     gdf.advance_day()
     check(gdf.aliens.is_empty() and int(gdf.crisis_stats["kills"]) == 1 and gdf.alien_news.any(func(n: Dictionary) -> bool: return n["kind"] == "killed"), "and kills the crawler")
     gdf.advance_day()

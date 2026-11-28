@@ -5,6 +5,7 @@ extends RefCounted
 ## and restarts by itself as soon as the inputs are back.
 
 const Crisis = preload("res://sim/crisis.gd")
+const People = preload("res://sim/people.gd")
 const STATUS_BUILT := "built"
 const STATUS_RUNNING := "running"
 const STATUS_PAUSED := "paused_missing_input"
@@ -12,9 +13,10 @@ const STATUS_DEPLETED := "depleted"
 const STATUS_BLOCKED := "paused_storage_full"  # nowhere to put what it makes
 const STATUS_STOPPED := "stopped"              # paused by the player
 const STATUS_DAMAGED := "damaged"              # hit by the creatures: does nothing until repaired
+const STATUS_NO_CREW := "no_crew"              # nobody to work it (see people.gd)
 
 ## States where a building only keeps a skeleton crew.
-const IDLE_STATUSES := [STATUS_PAUSED, STATUS_DEPLETED, STATUS_BLOCKED, STATUS_STOPPED, STATUS_DAMAGED]
+const IDLE_STATUSES := [STATUS_PAUSED, STATUS_DEPLETED, STATUS_BLOCKED, STATUS_STOPPED, STATUS_DAMAGED, STATUS_NO_CREW]
 
 
 ## Runs one day for every building and returns a report.
@@ -30,26 +32,30 @@ static func run_day(state) -> Dictionary:
         var previous: String = str(b["status"])
         if b.get("stopped", false):
             b["status"] = STATUS_STOPPED
-        elif kind == "defense":
-            pass  # defenses act in the crisis step; they keep a full crew
+        elif Crisis.holds_post(kind):
+            pass  # defenses and shelters act in the crisis step; they keep a full crew
         elif int(b.get("health", 1 << 30)) < Crisis.max_health(state, b):
             b["status"] = STATUS_DAMAGED
             b["batches"] = 0
+        elif (kind == "extractor" or kind == "factory") and People.crew_ratio(state, b) <= 0.0:
+            b["status"] = STATUS_NO_CREW
+            b["batches"] = 0
         elif kind == "extractor":
-            _run_extractor(state, b, def, produced)
+            _run_extractor(state, b, def, produced, People.crew_ratio(state, b))
         elif kind == "factory":
-            _run_factory(state, b, def, produced, consumed)
+            _run_factory(state, b, def, produced, consumed, People.crew_ratio(state, b))
         _note_change(state, b, previous)
-        upkeep += upkeep_of(def, str(b["status"]), idle_factor)
+        upkeep += upkeep_of(def, str(b["status"]), idle_factor, People.upkeep_mult(state, b))
     return {"produced": produced, "consumed": consumed, "upkeep_cents": upkeep}
 
 
 ## A paused factory or a depleted mine only keeps a skeleton crew.
-static func upkeep_of(def: Dictionary, status: String, idle_factor: float) -> int:
-    var cost: int = int(def["upkeep_per_day"])
+## `mult` is the invasion's labour discount (see People.upkeep_mult); the idle share applies to the lowered wage.
+static func upkeep_of(def: Dictionary, status: String, idle_factor: float, mult: float = 1.0) -> int:
+    var cost: float = float(def["upkeep_per_day"]) * mult
     if IDLE_STATUSES.has(status):
-        cost = int(round(float(cost) * idle_factor))
-    return cost
+        cost *= idle_factor
+    return int(round(cost))
 
 
 ## What the buildings cost per day in their current state.
@@ -57,7 +63,7 @@ static func current_upkeep(state) -> int:
     var idle_factor: float = float(state.data["balance"]["idle_upkeep_factor"])
     var total: int = 0
     for b in state.buildings:
-        total += upkeep_of(state.data["buildings"][b["type"]], str(b["status"]), idle_factor)
+        total += upkeep_of(state.data["buildings"][b["type"]], str(b["status"]), idle_factor, People.upkeep_mult(state, b))
     return total
 
 
@@ -82,7 +88,8 @@ static func _add(inv: Dictionary, id: String, qty: int) -> void:
     inv[id] = int(inv.get(id, 0)) + qty
 
 
-static func _run_extractor(state, b: Dictionary, def: Dictionary, produced: Dictionary) -> void:
+## `crew` (0 to 1) is the share of its crew the building has: it works in proportion.
+static func _run_extractor(state, b: Dictionary, def: Dictionary, produced: Dictionary, crew: float = 1.0) -> void:
     var balance: Dictionary = state.data["balance"]
     var dep: Dictionary = state.deposits[b["deposit_id"]]
     var info: Dictionary = state.data["map"]["deposits"][b["deposit_id"]]
@@ -104,7 +111,7 @@ static func _run_extractor(state, b: Dictionary, def: Dictionary, produced: Dict
             stuck = true  # no room: nothing is dug and nothing piles up
             continue
         # Fractions carry over to the next day, so 5.6 units/day really averages 5.6.
-        carry[res] = float(carry.get(res, 0.0)) + float(outputs[res]) * richness * taper
+        carry[res] = float(carry.get(res, 0.0)) + float(outputs[res]) * richness * taper * crew
         var possible: int = mini(int(floor(float(carry[res]) + 1e-9)), int(dep["remaining"]))
         var whole: int = mini(possible, state.free_space())
         if whole < possible:
@@ -124,10 +131,13 @@ static func _run_extractor(state, b: Dictionary, def: Dictionary, produced: Dict
         b["status"] = STATUS_RUNNING
 
 
-static func _run_factory(state, b: Dictionary, def: Dictionary, produced: Dictionary, consumed: Dictionary) -> void:
+static func _run_factory(state, b: Dictionary, def: Dictionary, produced: Dictionary, consumed: Dictionary, crew: float = 1.0) -> void:
     var inputs: Dictionary = def["inputs"]
     # A factory runs up to batches_per_day batches, as many as its stock allows.
-    var batches: int = int(def.get("batches_per_day", 1))
+    # A short crew runs fewer: fractions carry to the next day, so half a crew really averages half the batches.
+    var allowance: float = float(def.get("batches_per_day", 1)) * crew + float(b.get("batch_carry", 0.0))
+    var crew_cap: int = int(floor(allowance + 1e-9))
+    var batches: int = crew_cap
     var missing: Array = []
     for res in inputs:
         var need: int = int(inputs[res])
@@ -146,7 +156,14 @@ static func _run_factory(state, b: Dictionary, def: Dictionary, produced: Dictio
         if fit < batches:
             batches = fit
             space_limited = true
+    # Only a crew-limited day carries its fraction over; idle days do not bank batches.
+    b["batch_carry"] = (allowance - float(crew_cap)) if (batches == crew_cap and crew < 1.0) else 0.0
     if batches <= 0:
+        if crew_cap <= 0 and missing.is_empty() and not space_limited:
+            b["status"] = STATUS_RUNNING  # a short crew between batches: still at work
+            b["missing"] = []
+            b["batches"] = 0
+            return
         b["status"] = STATUS_BLOCKED if (space_limited and missing.is_empty()) else STATUS_PAUSED
         b["missing"] = missing
         b["batches"] = 0

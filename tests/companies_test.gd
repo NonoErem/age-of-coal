@@ -71,7 +71,8 @@ func test_data() -> void:
         for res in gd["companies"]["list"][id]["outputs"]:
             made[res] = true
     made["munitions"] = true  # a wartime good: no peacetime maker, only you and the market
-    check(made.size() == gd["resources"].size(), "every good has a specialist producer (munitions excepted)")
+    made["food"] = true       # nobody here farms: food only comes from the market
+    check(made.size() == gd["resources"].size(), "every good has a specialist producer (munitions and food excepted)")
 
 
 func test_depth_and_prices() -> void:
